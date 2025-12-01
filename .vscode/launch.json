@@ -31,6 +31,21 @@
                 "--config-name",
                 "mnist_classifier"
             ]
+        }, 
+        {
+            "name": "Python Debugger: Learning Agents BTT Evaluation",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "workflows.learning_agents_btt",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "args": [
+                "--config-path",
+                "../configs",
+                "--config-name",
+                "mnist_learning_agents"
+            ]
+
         }
     ]
 }

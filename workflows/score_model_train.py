@@ -8,7 +8,7 @@ from src.samplers.diff_dyms import marginal_prob_std, diffusion_coeff
 from src.trainer.datasets import get_dataset_loader
 from src.trainer.score_trainer import score_model_trainer
 from src.trainer.losses import loss_fn
-from src.samplers.samplers import Euler_Maruyama_sampler
+from src.samplers.samplers import euler_maruyama_sampler
 
 
 @hydra.main(config_path="../configs", version_base=None)
@@ -62,8 +62,8 @@ def main(cfg: DictConfig) -> None:
         )
     
     # Building a sampler for evaluating training progress
-    Euler_Maruyama_sampler_partial = functools.partial(
-        Euler_Maruyama_sampler,
+    euler_maruyama_sampler_partial = functools.partial(
+        euler_maruyama_sampler,
         marginal_prob_std=marginal_prob_std_fn,
         diffusion_coeff=diffusion_coeff_fn,
         batch_size=training_cfg.get("eval_batch_size", 64),
@@ -81,7 +81,7 @@ def main(cfg: DictConfig) -> None:
         n_epochs=training_cfg.num_epochs,
         score_model=score_model,
         loss_fn=loss_fn,
-        eval_fn=Euler_Maruyama_sampler_partial,
+        eval_fn=euler_maruyama_sampler_partial,
         evaluate_every=training_cfg.get("evaluate_every", 10),
         **trainer_kwargs,
     )
