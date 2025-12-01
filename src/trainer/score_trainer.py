@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional
 
 import torch
 from torch.optim import Adam
+import torch.optim.lr_scheduler as lr_schedulers
 from torch.optim.swa_utils import AveragedModel
 from tqdm.auto import tqdm
 from torchvision.utils import make_grid
@@ -28,6 +29,7 @@ def score_model_trainer(
     eval_fn: Optional[Any] = None,
     log_to_wandb: bool = True,
     wandb_run_kwargs: Optional[Dict[str, Any]] = None,
+    scheduler_config: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, Any]]:
     if data_loader is None:
         raise ValueError("data_loader must not be None.")
@@ -41,6 +43,16 @@ def score_model_trainer(
         score_model,
         avg_fn=lambda avg_p, p, n: ema_decay * avg_p + (1.0 - ema_decay) * p,
     )
+
+    scheduler = None
+    scheduler_step_on = "epoch"
+    if scheduler_config:
+        scheduler_name = scheduler_config.get("name")
+        if scheduler_name:
+            scheduler_cls = getattr(lr_schedulers, scheduler_name)
+            scheduler_params = scheduler_config.get("params", {})
+            scheduler = scheduler_cls(optimizer, **scheduler_params)
+            scheduler_step_on = scheduler_config.get("step_on", "epoch")
 
     start_epoch = 1
     global_step = 0
@@ -94,6 +106,9 @@ def score_model_trainer(
 
             optimizer.step()
 
+            if scheduler is not None and scheduler_step_on == "step":
+                scheduler.step()
+
             ema_model.update_parameters(score_model)
 
             batch_size = x.size(0)
@@ -109,11 +124,14 @@ def score_model_trainer(
                     {
                         "train/loss": loss.item(),
                         "train/running_loss": running_avg,
+                        "train/lr": optimizer.param_groups[0]["lr"],
                         "epoch": epoch,
                         "global_step": global_step,
                     },
                     step=global_step,
                 )
+        if scheduler is not None and scheduler_step_on == "epoch":
+            scheduler.step()
 
         epoch_loss = avg_loss / max(num_items, 1)
         metrics.append(
@@ -130,6 +148,7 @@ def score_model_trainer(
             wandb.log(
                 {
                     "train/epoch_loss": epoch_loss,
+                    "train/lr": optimizer.param_groups[0]["lr"],
                     "epoch": epoch,
                     "global_step": global_step,
                 },

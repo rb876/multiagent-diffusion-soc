@@ -18,6 +18,10 @@ training:
     entity: null
     name: null
     tags: []
+  scheduler:
+    name: null
+    step_on: CosineAnnealingLR # options: cosine, epoch
+    params: {}
 
 model:
   name: unet
