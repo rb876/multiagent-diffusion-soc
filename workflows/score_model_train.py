@@ -63,9 +63,11 @@ def main(cfg: DictConfig) -> None:
         "grad_clip_norm": training_cfg.get("grad_clip_norm"),
         "log_to_wandb": training_cfg.get("log_to_wandb", False),
     }
+    # Add scheduler config if specified
     scheduler_cfg = training_cfg.get("scheduler")
     if scheduler_cfg:
         trainer_kwargs["scheduler_config"] = OmegaConf.to_container(scheduler_cfg, resolve=True)
+    # Add wandb config if logging to wandb
     if trainer_kwargs["log_to_wandb"]:
         trainer_kwargs["wandb_run_kwargs"] = OmegaConf.to_container(
             wandb_cfg or {},
