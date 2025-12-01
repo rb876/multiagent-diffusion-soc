@@ -5,11 +5,18 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Python Debugger: Ex.4 Train and Score Model",
+            "name": "Python Debugger: Score Model Training",
             "type": "debugpy",
             "request": "launch",
-            "program": "./notebooks/train_score.py",
-            "console": "integratedTerminal"
+            "module": "workflows.score_model_train",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "args": [
+                "--config-path",
+                "../configs",
+                "--config-name",
+                "mnist_score_model"
+            ]
         }
     ]
 }
