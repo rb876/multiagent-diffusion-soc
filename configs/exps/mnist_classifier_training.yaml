@@ -1,6 +1,6 @@
 defaults:
-  - model: cnet_mnist
-  - data: mnist_classifier
+  - /model: cnet_mnist
+  - /data: mnist_classifier
   - _self_
 
 training:

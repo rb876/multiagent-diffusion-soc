@@ -29,7 +29,7 @@
                 "--config-path",
                 "../configs",
                 "--config-name",
-                "mnist_classifier"
+                "exps/mnist_classifier_training"
             ]
         }, 
         {
