@@ -43,7 +43,7 @@
                 "--config-path",
                 "../configs",
                 "--config-name",
-                "mnist_learning_agents"
+                "exps/btt_learning_agents_fine_tuning"
             ]
 
         }

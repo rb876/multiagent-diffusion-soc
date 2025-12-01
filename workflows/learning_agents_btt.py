@@ -23,15 +23,15 @@ def _load_state(module: torch.nn.Module, checkpoint_path: str, device: torch.dev
     module.load_state_dict(state_dict, strict=False)
 
 
-@hydra.main(config_path="../configs", config_name="mnist_learning_agents", version_base=None)
+@hydra.main(config_path="../configs", version_base=None)
 def main(cfg: DictConfig) -> None:
     device = torch.device(cfg.get("device", "cuda" if torch.cuda.is_available() else "cpu"))
-    soc_config = cfg.soc
-    sigma = cfg.get("diffusion", {}).get("sigma", 25.0)
+    soc_config = cfg.exps.soc
+    sigma = cfg.exps.get("diffusion", {}).get("sigma", 25.0)
 
     wandb_run = None
     wandb_module = None
-    wandb_cfg = cfg.get("wandb")
+    wandb_cfg = cfg.exps.get("wandb")
     if wandb_cfg is not None:
         wandb_dict = OmegaConf.to_container(wandb_cfg, resolve=True)
         enabled = wandb_dict.pop("enabled", True)
@@ -46,7 +46,7 @@ def main(cfg: DictConfig) -> None:
     # Load score model, classifier, and control nets
     marginal_prob_std_fn = functools.partial(marginal_prob_std, sigma=sigma, device=device)
     diffusion_coeff_fn = functools.partial(diffusion_coeff, sigma=sigma, device=device)
-    score_model_cfg = OmegaConf.to_container(cfg.score_model, resolve=True)
+    score_model_cfg = OmegaConf.to_container(cfg.exps.score_model, resolve=True)
     score_model_name = score_model_cfg.pop("name")
     score_model = get_model_by_name(
         score_model_name,
@@ -58,7 +58,7 @@ def main(cfg: DictConfig) -> None:
     _load_state(score_model, soc_config.path_to_score_model_checkpoint, device)
 
     # Load classifier
-    classifier_cfg = OmegaConf.to_container(cfg.classifier_model, resolve=True)
+    classifier_cfg = OmegaConf.to_container(cfg.exps.classifier_model, resolve=True)
     classifier_name = classifier_cfg.pop("name")
     classifier = get_model_by_name(
         classifier_name, 
@@ -68,7 +68,7 @@ def main(cfg: DictConfig) -> None:
     _load_state(classifier, soc_config.path_to_classifier_checkpoint, device)
 
     # Initialize control nets
-    control_cfg = OmegaConf.to_container(cfg.control_net_model, resolve=True)
+    control_cfg = OmegaConf.to_container(cfg.exps.control_net_model, resolve=True)
     control_name = control_cfg.pop("name")
     control_net_1 = get_model_by_name(
         control_name, marginal_prob_std=marginal_prob_std_fn, **control_cfg
@@ -126,7 +126,7 @@ def main(cfg: DictConfig) -> None:
 
         should_eval = eval_every and (step % eval_every == 0 or step == iters - 1)
         if should_eval and generate_and_plot_samples is not None:
-            samples, _ = generate_and_plot_samples(
+            samples = generate_and_plot_samples(
                 score_model,
                 control_net_1,
                 control_net_2,

@@ -1,8 +1,8 @@
 defaults:
-  - model@score_model: unet_mnist
-  - model@classifier_model: cnet_mnist
-  - model@control_net_model: control_unet_mnist
-  - data: mnist_learning_agents
+  - /model@score_model: unet_mnist
+  - /model@classifier_model: cnet_mnist
+  - /model@control_net_model: control_unet_mnist
+  - /data: mnist_learning_agents
   - _self_
 
 soc:

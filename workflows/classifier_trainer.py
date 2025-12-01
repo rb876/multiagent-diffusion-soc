@@ -9,7 +9,7 @@ from hydra.core.hydra_config import HydraConfig
 from src.trainer.datasets import get_dataset_loaders
 from src.models.registry import get_model_by_name
 
-@hydra.main(config_path="../configs", config_name="train", version_base=None)
+@hydra.main(config_path="../configs", version_base=None)
 def main(cfg: DictConfig) -> None:
     training_cfg = cfg.exps.training
 

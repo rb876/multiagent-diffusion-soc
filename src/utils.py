@@ -14,13 +14,13 @@ def generate_and_plot_samples(
 ):
     """Generate samples using Controlled Euler-Maruyama and plot with predicted class labels."""
 
-    # eval mode
+    # Set all networks in eval mode
     score_model.eval()
     control_net_1.eval()
     control_net_2.eval()
     classifier.eval()
 
-    # sampling
+    # Generate samples
     samples = euler_maruyama_controlled_sampler(
         score_model=score_model,
         control_net_1=control_net_1,
