@@ -15,7 +15,7 @@
                 "--config-path",
                 "../configs",
                 "--config-name",
-                "mnist_score_model"
+                "exps/mnist_score_model_training"
             ]
         },
         {

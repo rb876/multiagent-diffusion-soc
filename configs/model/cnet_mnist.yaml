@@ -1,0 +1,4 @@
+name: cnet
+img_size: [28, 28]
+num_classes: 10
+num_hidden_layers: 2

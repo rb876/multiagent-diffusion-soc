@@ -1,0 +1,8 @@
+name: unet
+in_channels: 2
+out_channels: 1
+model_channels: 32
+channel_mult: [1, 2]
+num_res_blocks: 1
+attention_resolutions: []
+max_period: 0.005

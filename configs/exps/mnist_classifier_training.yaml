@@ -1,0 +1,10 @@
+defaults:
+  - model: cnet_mnist
+  - data: mnist_classifier
+  - _self_
+
+training:
+  device: cuda
+  learning_rate: 1.0e-4
+  num_epochs: 20
+  evaluate_every: 10
