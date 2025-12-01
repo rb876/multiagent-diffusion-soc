@@ -17,6 +17,20 @@
                 "--config-name",
                 "mnist_score_model"
             ]
+        },
+        {
+            "name": "Python Debugger: Classifier Training",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "workflows.classifier_trainer",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "args": [
+                "--config-path",
+                "../configs",
+                "--config-name",
+                "mnist_classifier"
+            ]
         }
     ]
 }

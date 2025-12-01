@@ -1,0 +1,20 @@
+training:
+  device: cuda
+  evaluate_every: 10
+  learning_rate: 1.0e-4
+  num_epochs: 20
+
+model:
+  name: cnet
+  img_size: [28, 28]
+  num_classes: 10
+  num_hidden_layers: 2
+
+data:
+  loader:
+    name: mnist
+    test_batch_size: 64
+    train_batch_size: 64
+    train_shuffle: true
+    test_shuffle: false
+    num_workers: 4
