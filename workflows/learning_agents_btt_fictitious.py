@@ -70,76 +70,69 @@ def main(cfg: DictConfig) -> None:
     # Initialize control nets
     control_cfg = OmegaConf.to_container(cfg.exps.control_net_model, resolve=True)
     control_name = control_cfg.pop("name")
-    control_net_1 = get_model_by_name(
-        control_name, marginal_prob_std=marginal_prob_std_fn, **control_cfg
-    ).to(device)
-    control_net_2 = get_model_by_name(
-        control_name, marginal_prob_std=marginal_prob_std_fn, **control_cfg
-    ).to(device)
-    control_net_1.train()
-    control_net_2.train()
-
-    outer_iters = soc_config.outer_iters
-    inner_iters = soc_config.inner_iters
-    train_steps = soc_config.get("train_num_steps", 25)
-    sample_steps = soc_config.get("sample_num_steps", soc_config.num_diffusion_steps)
-    target_digit = soc_config.get("target_digit", 0)
-    eval_every = soc_config.get("eval_every", 100)
-    sample_batch_size = soc_config.get("sample_batch_size", 64)
-    eps = soc_config.get("eps", 1e-3)
+    control_agents = {}
+    for i in range(soc_config.num_control_agents):
+        control_agents[i] = get_model_by_name(
+            control_name, marginal_prob_std=marginal_prob_std_fn, **control_cfg
+        ).to(device)
+        control_agents[i].train()
 
     from tqdm.auto import tqdm
-    pbar = tqdm(range(outer_iters), desc="Training control policy")
+    pbar = tqdm(range(soc_config.outer_iters), desc="Training control policy")
     for step in pbar:
-        loss_ctrl_1, loss_ctrl_2 = fictitious_train_control_btt(
+        loss_dict = fictitious_train_control_btt(
             score_model,
             classifier,
-            control_net_1,
-            control_net_2,
+            control_agents,
             marginal_prob_std_fn,
             diffusion_coeff_fn,
-            target_digit=target_digit,
-            num_steps=train_steps,
+            target_digit=soc_config.target_digit,
+            num_steps=soc_config.train_num_steps,
             batch_size=soc_config.batch_size,
             device=device,
-            eps=eps,
+            eps=soc_config.eps,
             lambda_reg=soc_config.lambda_reg,
-            inner_iters=inner_iters,
+            inner_iters=soc_config.inner_iters,
             running_class_reg=soc_config.running_class_reg,
             learning_rate=soc_config.learning_rate,
         )
-        ctrl_1_val = float(loss_ctrl_1)
-        ctrl_2_val = float(loss_ctrl_2)
-        total_val = ctrl_1_val + ctrl_2_val
-        pbar.set_postfix(
-            total=f"{total_val:.4f}",
-            control_1=f"{ctrl_1_val:.4f}",
-            control_2=f"{ctrl_2_val:.4f}",
-        )
+
+        if isinstance(loss_dict, dict):
+            losses = list(loss_dict.values())
+        else:
+            losses = list(loss_dict)
+
+        control_losses = {
+            f"control_{idx}": float(loss)
+            for idx, loss in enumerate(losses, start=1)
+        }
+        total_val = sum(control_losses.values())
+
+        postfix_payload = {"total": f"{total_val:.4f}"}
+        postfix_payload.update({name: f"{value:.4f}" for name, value in control_losses.items()})
+        pbar.set_postfix(**postfix_payload)
 
         if wandb_run is not None:
-            wandb_module.log(
-                {
-                    "train/total_loss": total_val,
-                    "train/control_1_loss": ctrl_1_val,
-                    "train/control_2_loss": ctrl_2_val,
-                    "train/target_digit": target_digit,
-                    "iteration": step + 1,
-                },
-                step=step + 1,
-            )
+            log_payload = {
+                "train/total_loss": total_val,
+                "train/target_digit": soc_config.target_digit,
+                "iteration": step + 1,
+            }
+            log_payload.update({f"train/{name}_loss": value for name, value in control_losses.items()})
+            wandb_module.log(log_payload, step=step + 1)
 
-        should_eval = eval_every and (step % eval_every == 0 or step == outer_iters - 1)
+        should_eval = soc_config.eval_every and (
+            step % soc_config.eval_every == 0 or step == soc_config.outer_iters - 1
+        )
         if should_eval and generate_and_plot_samples is not None:
             samples = generate_and_plot_samples(
                 score_model,
-                control_net_1,
-                control_net_2,
+                control_agents,
                 classifier,
                 marginal_prob_std_fn,
                 diffusion_coeff_fn,
-                sample_batch_size=sample_batch_size,
-                num_steps=sample_steps,
+                sample_batch_size=soc_config.sample_batch_size,
+                num_steps=soc_config.sample_num_steps,
                 device=str(device),
             )
             if wandb_run is not None:

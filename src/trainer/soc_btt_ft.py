@@ -114,8 +114,7 @@ def train_control_btt(
 def fictitious_train_control_btt(
     score_model,
     classifier,
-    control_net_1,
-    control_net_2,
+    control_agents,
     marginal_prob_std_fn,
     diffusion_coeff_fn,
     target_digit,
@@ -133,35 +132,38 @@ def fictitious_train_control_btt(
     def _train_single_control_policy(
         score_model,
         classifier,
-        control_net_1,
-        control_net_2,
+        control_agents,
         marginal_prob_std_fn,
         diffusion_coeff_fn,
         optimizer,
         target_digit,
         num_steps,
         batch_size,
-        device="cuda",
-        eps=1e-3,
-        lambda_reg=0.1,
-        running_class_reg=1.0,
-        player_idx=0,
+        device,
+        eps,
+        lambda_reg,
+        running_class_reg,
+        player_idx,
     ):
         """Train one control policy given the other is fixed."""
 
+
+        for i, control_net in control_agents.items():
+            if i == player_idx:
+                control_net.train()
+            else:
+                control_net.eval()
+        
         score_model.eval()
         classifier.eval()
+
         optimizer.zero_grad()
 
-        t = torch.ones(batch_size, device=device)
         time_steps = torch.linspace(1., eps, num_steps, device=device)
         step_size = time_steps[0] - time_steps[1]
-        
-        def get_std(time_tensor):
-            return marginal_prob_std_fn(time_tensor)[:, None, None, None]
 
-        init_x1 = torch.randn(batch_size, 1, 28, 28, device=device) * get_std(t)
-        init_x2 = torch.randn(batch_size, 1, 28, 28, device=device) * get_std(t)
+        init_x1 = torch.randn(batch_size, 1, 28, 28, device=device) * marginal_prob_std_fn(time_steps[0])[:, None, None, None]
+        init_x2 = torch.randn(batch_size, 1, 28, 28, device=device) * marginal_prob_std_fn(time_steps[0])[:, None, None, None] 
         
         x1 = init_x1
         x2 = init_x2
@@ -190,17 +192,16 @@ def fictitious_train_control_btt(
             Y_t = (x1 * mask_top) + (x2 * mask_bot)
             
             if player_idx == 0:
-                u1 = control_net_1(torch.cat([x1, Y_t], dim=1), batch_time_step)
+                u1 = control_agents[player_idx](torch.cat([x1, Y_t], dim=1), batch_time_step)
                 with torch.no_grad():
-                    u2 = control_net_2(torch.cat([x2, Y_t], dim=1), batch_time_step)
+                    u2 = control_agents[1](torch.cat([x2, Y_t], dim=1), batch_time_step)
             elif player_idx == 1:
                 with torch.no_grad():
-                    u1 = control_net_1(torch.cat([x1, Y_t], dim=1), batch_time_step)
-                u2 = control_net_2(torch.cat([x2, Y_t], dim=1), batch_time_step)
-            else:
-                raise ValueError("player_idx must be 0 or 1 - Python indexing")
+                    u1 = control_agents[0](torch.cat([x1, Y_t], dim=1), batch_time_step)
+                u2 = control_agents[player_idx](torch.cat([x2, Y_t], dim=1), batch_time_step)
 
-            current_std = get_std(batch_time_step)
+
+            current_std = marginal_prob_std_fn(batch_time_step)[:, None, None, None]        
             
             s1 = score_model(x1, batch_time_step)
             s2 = score_model(x2, batch_time_step)
@@ -240,54 +241,36 @@ def fictitious_train_control_btt(
                     (running_class_reg * cumulative_class_loss)
                     
         total_loss.backward()
-
-        torch.nn.utils.clip_grad_norm_(control_net_1.parameters(), 1.0)
-        torch.nn.utils.clip_grad_norm_(control_net_2.parameters(), 1.0)
+        for control_net in control_agents.values():
+            torch.nn.utils.clip_grad_norm_(control_net.parameters(), 1.0)
+    
         optimizer.step()
         
-        return total_loss
+        return total_loss.item()
     
-    # ----- set up optimizers for both control nets -----
-    opt1 = torch.optim.Adam(control_net_1.parameters(), lr=learning_rate)
-    opt2 = torch.optim.Adam(control_net_2.parameters(), lr=learning_rate)
+    optimizers = {}
+    for i in range(len(control_agents)):
+        optimizers[i] = torch.optim.Adam(control_agents[i].parameters(), lr=learning_rate)
 
-    # ----- update player 0 given player 1 fixed -----
-    for _ in range(inner_iters):
-        loss1 = _train_single_control_policy(
-            score_model,
-            classifier,
-            control_net_1,
-            control_net_2,
-            marginal_prob_std_fn,
-            diffusion_coeff_fn,
-            opt1,
-            target_digit=target_digit,
-            num_steps=num_steps,
-            batch_size=batch_size,
-            device=device,
-            eps=eps,
-            lambda_reg=lambda_reg,
-            running_class_reg=running_class_reg,
-            player_idx=0,
-        )
-    # ----- update player 1 given player 0 fixed -----
-    for _ in range(inner_iters):
-        loss2 = _train_single_control_policy(
-            score_model,
-            classifier,
-            control_net_1,
-            control_net_2,
-            marginal_prob_std_fn,
-            diffusion_coeff_fn,
-            opt2,
-            target_digit=target_digit,
-            num_steps=num_steps,
-            batch_size=batch_size,
-            device=device,
-            eps=eps,
-            lambda_reg=lambda_reg,
-            running_class_reg=running_class_reg,
-            player_idx=1,
-        )
+    loss_dict = {}
+    for  i in range(len(control_agents)):
+        for _ in range(inner_iters):
+            loss_value = _train_single_control_policy(
+                score_model,
+                classifier,
+                control_agents,
+                marginal_prob_std_fn,
+                diffusion_coeff_fn,
+                optimizers[i],
+                target_digit=target_digit,
+                num_steps=num_steps,
+                batch_size=batch_size,
+                device=device,
+                eps=eps,
+                lambda_reg=lambda_reg,
+                running_class_reg=running_class_reg,
+                player_idx=i,
+            )
+            loss_dict[i] = loss_value
 
-    return loss1.item(), loss2.item()
+    return loss_dict
