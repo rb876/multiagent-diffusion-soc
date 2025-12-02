@@ -31,8 +31,7 @@ def euler_maruyama_sampler(
 
 def euler_maruyama_controlled_sampler(
     score_model,
-    control_net_1,
-    control_net_2,
+    control_agents,
     marginal_prob_std,
     diffusion_coeff,
     batch_size=8,
@@ -60,8 +59,8 @@ def euler_maruyama_controlled_sampler(
             
             Y_t = (x1 * mask_top) + (x2 * mask_bot)
             
-            u1 = control_net_1(torch.cat([x1, Y_t], dim=1), batch_time_step)
-            u2 = control_net_2(torch.cat([x2, Y_t], dim=1), batch_time_step)
+            u1 = control_agents[0](torch.cat([x1, Y_t], dim=1), batch_time_step)
+            u2 = control_agents[1](torch.cat([x2, Y_t], dim=1), batch_time_step)
                         
             drift1 = g_sq * score_model(x1, batch_time_step)
             x1 = x1 + (drift1 + u1) * step_size + torch.sqrt(step_size) * g[:,None,None,None] * torch.randn_like(x1)

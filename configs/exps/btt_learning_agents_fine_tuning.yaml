@@ -6,14 +6,22 @@ defaults:
   - _self_
 
 soc:
-  path_to_classifier_checkpoint: /home/rbarbano/home/git/multi-agent-diffusion-working-repo/cnet.pt
-  path_to_score_model_checkpoint: /home/rbarbano/home/git/multi-agent-diffusion-working-repo/checkpoints/latest.ckpt
-  num_diffusion_steps: 500
   batch_size: 16
-  learning_rate: 1e-4
+  eps: 1e-3
+  eval_every: 100
   iters: 1000
   lambda_reg: 0.1
+  learning_rate: 1e-4
+  num_control_agents: 2
+  num_diffusion_steps: 500
+  path_to_classifier_checkpoint: /home/rbarbano/home/git/multi-agent-diffusion-working-repo/cnet.pt
+  path_to_score_model_checkpoint: /home/rbarbano/home/git/multi-agent-diffusion-working-repo/checkpoints/latest.ckpt
+  running_class_reg: 1
+  sample_batch_size: 64
+  sample_steps: 100
   target_digit: 0
+  train_num_steps: 25
+  sample_num_steps: 500
 
 wandb:
   project: soc-agent-diffusion

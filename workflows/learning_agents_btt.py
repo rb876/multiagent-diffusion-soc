@@ -70,45 +70,37 @@ def main(cfg: DictConfig) -> None:
     # Initialize control nets
     control_cfg = OmegaConf.to_container(cfg.exps.control_net_model, resolve=True)
     control_name = control_cfg.pop("name")
-    control_net_1 = get_model_by_name(
-        control_name, marginal_prob_std=marginal_prob_std_fn, **control_cfg
-    ).to(device)
-    control_net_2 = get_model_by_name(
-        control_name, marginal_prob_std=marginal_prob_std_fn, **control_cfg
-    ).to(device)
-    control_net_1.train()
-    control_net_2.train()
 
+    control_agents = {}
+    for i in range(soc_config.num_control_agents):
+        control_agents[i] = get_model_by_name(
+            control_name, marginal_prob_std=marginal_prob_std_fn, **control_cfg
+        ).to(device)
+        control_agents[i].train()
+
+    control_parameters = [param for net in control_agents.values() for param in net.parameters()]
     optimizer = torch.optim.Adam(
-        list(control_net_1.parameters()) + list(control_net_2.parameters()),
-        lr=soc_config.learning_rate,
+        control_parameters,
+        lr=soc_config.learning_rate
     )
 
-    iters = soc_config.iters
-    train_steps = soc_config.get("train_num_steps", 25)
-    sample_steps = soc_config.get("sample_num_steps", soc_config.num_diffusion_steps)
-    target_digit = soc_config.get("target_digit", 0)
-    eval_every = soc_config.get("eval_every", 100)
-    sample_batch_size = soc_config.get("sample_batch_size", 64)
-    eps = soc_config.get("eps", 1e-3)
-
     from tqdm.auto import tqdm
-    pbar = tqdm(range(iters), desc="Training control policy")
+    pbar = tqdm(range(soc_config.iters), desc="Training control policy")
     for step in pbar:
         loss = train_control_btt(
-            score_model,
-            classifier,
-            control_net_1,
-            control_net_2,
-            marginal_prob_std_fn,
-            diffusion_coeff_fn,
-            optimizer,
-            target_digit=target_digit,
-            num_steps=train_steps,
             batch_size=soc_config.batch_size,
+            classifier=classifier,
+            control_agents=control_agents,
             device=device,
-            eps=eps,
+            diffusion_coeff_fn=diffusion_coeff_fn,
+            eps=soc_config.eps,
             lambda_reg=soc_config.lambda_reg,
+            marginal_prob_std_fn=marginal_prob_std_fn,
+            num_steps=soc_config.train_num_steps,
+            optimizer=optimizer,
+            running_class_reg=soc_config.running_class_reg,
+            score_model=score_model,
+            target_digit=soc_config.target_digit,
         )
         loss_value = float(loss)
         pbar.set_postfix(loss=f"{loss_value:.4f}")
@@ -118,24 +110,25 @@ def main(cfg: DictConfig) -> None:
                 {
                     "train/loss": loss_value,
                     "train/lr": optimizer.param_groups[0]["lr"],
-                    "train/target_digit": target_digit,
+                    "train/target_digit": soc_config.target_digit,
                     "iteration": step + 1,
                 },
                 step=step + 1,
             )
 
-        should_eval = eval_every and (step % eval_every == 0 or step == iters - 1)
+        should_eval = soc_config.eval_every and (
+            step % soc_config.eval_every == 0 or step == soc_config.iters - 1
+        )
         if should_eval and generate_and_plot_samples is not None:
             samples = generate_and_plot_samples(
-                score_model,
-                control_net_1,
-                control_net_2,
-                classifier,
-                marginal_prob_std_fn,
-                diffusion_coeff_fn,
-                sample_batch_size=sample_batch_size,
-                num_steps=sample_steps,
+                classifier=classifier,
+                control_agents=control_agents,
                 device=str(device),
+                diffusion_coeff_fn=diffusion_coeff_fn,
+                marginal_prob_std_fn=marginal_prob_std_fn,
+                num_steps=soc_config.sample_num_steps,
+                sample_batch_size=soc_config.sample_batch_size,
+                score_model=score_model,
             )
             if wandb_run is not None:
                 log_payload: Dict[str, Any] = {"eval/iteration": step + 1}
