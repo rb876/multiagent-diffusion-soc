@@ -1,0 +1,7 @@
+loader:
+  name: mnist
+  train_batch_size: 64
+  test_batch_size: 64
+  train_shuffle: true
+  test_shuffle: false
+  num_workers: 4
