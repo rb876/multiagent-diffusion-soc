@@ -1,0 +1,24 @@
+defaults:
+  - /model@score_model: unet_mnist
+  - /model@classifier_model: cnet_mnist
+  - /model@control_net_model: control_unet_mnist
+  - /data: mnist_learning_agents
+  - _self_
+
+soc:
+  path_to_classifier_checkpoint: /home/rbarbano/home/git/multi-agent-diffusion-working-repo/cnet.pt
+  path_to_score_model_checkpoint: /home/rbarbano/home/git/multi-agent-diffusion-working-repo/checkpoints/latest.ckpt
+  num_diffusion_steps: 500
+  batch_size: 16
+  learning_rate: 1e-4
+  outer_iters: 300
+  inner_iters: 5
+  lambda_reg: 0.1
+  target_digit: 0
+  running_class_reg: 1.0
+
+wandb:
+  project: soc-agent-diffusion
+  entity: null
+  name: null
+  tags: []
