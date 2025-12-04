@@ -97,7 +97,7 @@ def main(cfg: DictConfig) -> None:
     from tqdm.auto import tqdm
     pbar = tqdm(range(soc_config.iters), desc="Training control policy")
     for step in pbar:
-        loss = train_control_btt(
+        loss, info = train_control_btt(
             batch_size=soc_config.batch_size,
             classifier=classifier,
             control_agents=control_agents,
@@ -109,9 +109,10 @@ def main(cfg: DictConfig) -> None:
             marginal_prob_std_fn=marginal_prob_std_fn,
             num_steps=soc_config.train_num_steps,
             optimizer=optimizer,
-            running_class_reg=soc_config.running_class_reg,
+            running_optimality_reg=soc_config.running_optimality_reg,
             score_model=score_model,
             target_digit=soc_config.target_digit,
+            debug=soc_config.debug,
         )
         loss_value = float(loss)
         pbar.set_postfix(loss=f"{loss_value:.4f}")
@@ -126,7 +127,16 @@ def main(cfg: DictConfig) -> None:
                 },
                 step=step + 1,
             )
-
+            if soc_config.get("debug", False) and info:
+                log_payload: Dict[str, Any] = {"train/iteration": step + 1}
+                for k, v in info.items():
+                    if isinstance(v, (float, int)):
+                        log_payload[f"train/{k}"] = v
+                    if isinstance(v, dict):
+                        for kk, vv in v.items():
+                            log_payload[f"train/{k}/{kk}"] = vv
+                wandb_module.log(log_payload, step=step + 1)
+        
         should_eval = soc_config.eval_every and (
             step % soc_config.eval_every == 0 or step == soc_config.iters - 1
         )

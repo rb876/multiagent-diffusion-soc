@@ -16,16 +16,16 @@ soc:
   num_diffusion_steps: 500
   path_to_classifier_checkpoint: /home/rbarbano/home/git/multi-agent-diffusion-working-repo/cnet.pt
   path_to_score_model_checkpoint: /home/rbarbano/home/git/multi-agent-diffusion-working-repo/checkpoints/latest.ckpt
-  running_class_reg: 1
+  running_optimality_reg: 1
   sample_batch_size: 64
   target_digit: 0
   train_num_steps: 25
   sample_num_steps: 500
   aggregator:
-    mask_name: average
-    use_overlap: false
+    mask_name: split
+    use_overlap: true
     overlap_size: 4
-
+  debug: true
 
 
 wandb:
