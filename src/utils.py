@@ -4,6 +4,7 @@ def generate_and_plot_samples(
     score_model,
     control_agents,
     classifier,
+    aggregator,
     marginal_prob_std_fn,
     diffusion_coeff_fn,
     sample_batch_size: int = 64,
@@ -16,6 +17,7 @@ def generate_and_plot_samples(
     # Set all networks in eval mode
     score_model.eval()
     classifier.eval()
+    
     # Set all control agents in eval mode
     for control_net in control_agents.values():
         control_net.eval()
@@ -24,6 +26,7 @@ def generate_and_plot_samples(
     samples = euler_maruyama_controlled_sampler(
         score_model=score_model,
         control_agents=control_agents,
+        aggregator=aggregator,
         marginal_prob_std=marginal_prob_std_fn,
         diffusion_coeff=diffusion_coeff_fn,
         batch_size=sample_batch_size,

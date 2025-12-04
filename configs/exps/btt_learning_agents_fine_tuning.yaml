@@ -21,6 +21,12 @@ soc:
   target_digit: 0
   train_num_steps: 25
   sample_num_steps: 500
+  aggregator:
+    mask_name: split
+    use_overlap: true
+    overlap_size: 4
+
+
 
 wandb:
   project: soc-agent-diffusion

@@ -8,6 +8,7 @@ from torchvision.utils import make_grid
 from hydra.utils import to_absolute_path
 from omegaconf import DictConfig, OmegaConf
 
+from src.envs.aggregator import ImageMaskAggregator
 from src.models.registry import get_model_by_name
 from src.samplers.diff_dyms import marginal_prob_std, diffusion_coeff
 from src.trainer.soc_btt_ft import train_control_btt
@@ -84,6 +85,15 @@ def main(cfg: DictConfig) -> None:
         lr=soc_config.learning_rate
     )
 
+    # Initialize the aggregator
+    aggregator_cfg = soc_config.aggregator
+    aggregator = ImageMaskAggregator(
+        img_dims=(1, 28, 28),
+        num_processes=soc_config.num_control_agents,
+        device=device, 
+        **aggregator_cfg
+    )
+
     from tqdm.auto import tqdm
     pbar = tqdm(range(soc_config.iters), desc="Training control policy")
     for step in pbar:
@@ -91,6 +101,7 @@ def main(cfg: DictConfig) -> None:
             batch_size=soc_config.batch_size,
             classifier=classifier,
             control_agents=control_agents,
+            aggregator=aggregator,
             device=device,
             diffusion_coeff_fn=diffusion_coeff_fn,
             eps=soc_config.eps,
@@ -123,6 +134,7 @@ def main(cfg: DictConfig) -> None:
             samples = generate_and_plot_samples(
                 classifier=classifier,
                 control_agents=control_agents,
+                aggregator=aggregator,
                 device=str(device),
                 diffusion_coeff_fn=diffusion_coeff_fn,
                 marginal_prob_std_fn=marginal_prob_std_fn,

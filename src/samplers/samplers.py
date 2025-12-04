@@ -32,6 +32,7 @@ def euler_maruyama_sampler(
 def euler_maruyama_controlled_sampler(
     score_model,
     control_agents,
+    aggregator,
     marginal_prob_std,
     diffusion_coeff,
     batch_size=8,
@@ -46,9 +47,6 @@ def euler_maruyama_controlled_sampler(
     # Initialize separate latent codes
     x1 = torch.randn(batch_size, 1, 28, 28, device=device) * marginal_prob_std(t)[:, None, None, None]
     x2 = torch.randn(batch_size, 1, 28, 28, device=device) * marginal_prob_std(t)[:, None, None, None]
-    
-    mask_top = torch.zeros((1, 1, 28, 28), device=device); mask_top[:, :, :14, :] = 1.0
-    mask_bot = torch.zeros((1, 1, 28, 28), device=device); mask_bot[:, :, 14:, :] = 1.0
 
     with torch.no_grad():
         for time_step in range(len(time_steps)):
@@ -57,7 +55,7 @@ def euler_maruyama_controlled_sampler(
             g = diffusion_coeff(batch_time_step)
             g_sq = (g**2)[:, None, None, None]
             
-            Y_t = (x1 * mask_top) + (x2 * mask_bot)
+            Y_t = aggregator([x1, x2])
             
             u1 = control_agents[0](torch.cat([x1, Y_t], dim=1), batch_time_step)
             u2 = control_agents[1](torch.cat([x2, Y_t], dim=1), batch_time_step)
@@ -68,4 +66,4 @@ def euler_maruyama_controlled_sampler(
             drift2 = g_sq * score_model(x2, batch_time_step)
             x2 = x2 + (drift2 + u2) * step_size + torch.sqrt(step_size) * g[:,None,None,None] * torch.randn_like(x2)
 
-    return (x1 * mask_top) + (x2 * mask_bot)
+    return aggregator([x1, x2])
