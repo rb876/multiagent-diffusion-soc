@@ -22,8 +22,8 @@ soc:
   train_num_steps: 25
   sample_num_steps: 500
   aggregator:
-    mask_name: split
-    use_overlap: true
+    mask_name: average
+    use_overlap: false
     overlap_size: 4
 
 

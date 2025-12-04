@@ -90,7 +90,7 @@ def main(cfg: DictConfig) -> None:
     aggregator = ImageMaskAggregator(
         img_dims=(1, 28, 28),
         num_processes=soc_config.num_control_agents,
-        device=device, 
+        device=device,
         **aggregator_cfg
     )
 
