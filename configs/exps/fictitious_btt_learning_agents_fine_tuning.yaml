@@ -12,7 +12,7 @@ soc:
   inner_iters: 5
   lambda_reg: 0.1
   learning_rate: 1e-4
-  num_control_agents: 2
+  num_control_agents: 3
   num_diffusion_steps: 500
   outer_iters: 300
   path_to_classifier_checkpoint: /home/rbarbano/home/git/multi-agent-diffusion-working-repo/cnet.pt
