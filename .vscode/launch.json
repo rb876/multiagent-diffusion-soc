@@ -33,32 +33,32 @@
             ]
         }, 
         {
-            "name": "Python Debugger: Learning Agents BTT Evaluation",
+            "name": "Python Debugger: Learning Agents BPTT Evaluation",
             "type": "debugpy",
             "request": "launch",
-            "module": "workflows.learning_agents_btt",
+            "module": "workflows.learning_agents_bptt",
             "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",
             "args": [
                 "--config-path",
                 "../configs",
                 "--config-name",
-                "exps/btt_learning_agents_fine_tuning"
+                "exps/bptt_learning_agents_fine_tuning"
             ]
 
         }, 
         {
-            "name": "Python Debugger: Learning Agents Fictitious BTT Evaluation",
+            "name": "Python Debugger: Learning Agents Fictitious BPTT Evaluation",
             "type": "debugpy",
             "request": "launch",
-            "module": "workflows.learning_agents_btt_fictitious",
+            "module": "workflows.learning_agents_bptt_fictitious",
             "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",
             "args": [
                 "--config-path",
                 "../configs",
                 "--config-name",
-                "exps/fictitious_btt_learning_agents_fine_tuning"
+                "exps/fictitious_bptt_learning_agents_fine_tuning"
             ]
 
         }

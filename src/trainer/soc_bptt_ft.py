@@ -3,15 +3,15 @@ from torch.nn import functional as F
 
 from src.trainer.utils import compute_grad_norms
 
-def train_control_btt(
+def train_control_bptt(
     score_model,
-    classifier,
+    optimality_criterion,
     control_agents,
     aggregator,
     marginal_prob_std_fn,
     diffusion_coeff_fn,
     optimizer,
-    target_digit,
+    optimality_target,
     num_steps,
     batch_size,
     device,
@@ -24,7 +24,7 @@ def train_control_btt(
     """Single-step training of multiple control policies in BTT setting."""
     # Set models to appropriate modes
     score_model.eval()
-    classifier.eval()
+    optimality_criterion.eval() # NOTE: optimality criterion is always shared accross agents.
     agent_keys = sorted(control_agents.keys())
     if not agent_keys:
         raise ValueError("No control agents provided for training.")
@@ -45,7 +45,6 @@ def train_control_btt(
         key: torch.randn(batch_size, 1, 28, 28, device=device) * initial_std
         for key in agent_keys
     }
-
     # Initialize info dict for debugging if needed
     info = {}
     # Initialize cumulative losses
@@ -68,19 +67,14 @@ def train_control_btt(
             # NOTE: assume that the score model is shared across agents. 
             # This will need to be modifid as we expect to have different score models per agent in the future.
             scores[key] = score_model(system_states[key], batch_time_step)
-
         # Compute denoised estimates for all agents (TWEEDY ESTIMATOR).
         current_std = marginal_prob_std_fn(batch_time_step)[:, None, None, None]
         for key in agent_keys:
             x0_hats[key] = system_states[key] + (current_std**2) * scores[key]
-
         # Aggregate the denoised estimates across agents for running optimality loss.
         Y_0_hat = aggregator([x0_hats[key] for key in agent_keys])
         # Compute running optimality loss.
-        target_labels = torch.full((batch_size,), target_digit, device=device, dtype=torch.long)
-        logits_running = classifier(Y_0_hat)
-        running_loss = F.cross_entropy(logits_running, target_labels)
-        cumulative_optimality_loss += running_loss * step_size
+        cumulative_optimality_loss += optimality_criterion.get_running_optimality_loss(Y_0_hat, optimality_target) * step_size
         # Progress system dynamics for all agents.
         noise_scale = torch.sqrt(step_size) * g_noise
         for key in agent_keys:
@@ -91,9 +85,8 @@ def train_control_btt(
             cumulative_control_loss += torch.mean(controls[key] ** 2) * step_size
 
     Y_final = aggregator([system_states[key] for key in agent_keys])
-    logits = classifier(Y_final)
-    target_labels = torch.full((batch_size,), target_digit, device=device, dtype=torch.long)
-    optimality_loss = F.cross_entropy(logits, target_labels)
+    # Compute terminal optimality loss.
+    optimality_loss = optimality_criterion.get_terminal_optimality_loss(Y_final, optimality_target)
     # Compute overall SOC loss to backpropagate.
     total_loss = (
         lambda_reg * cumulative_control_loss
@@ -108,7 +101,6 @@ def train_control_btt(
         info ['optimality_loss'] = optimality_loss.item()
         info ['agents'] = [controls[key] for key in agent_keys]
         info ['grad_norms'] = compute_grad_norms(control_agents)
-
     for key in agent_keys:
         torch.nn.utils.clip_grad_norm_(control_agents[key].parameters(), 1.0)
     # Update control agent parameters.
@@ -116,7 +108,7 @@ def train_control_btt(
     return total_loss.item(), info
 
 
-def fictitious_train_control_btt(
+def fictitious_train_control_bptt(
     score_model,
     classifier,
     control_agents,

@@ -11,7 +11,7 @@ from omegaconf import DictConfig, OmegaConf
 from src.envs.aggregator import ImageMaskAggregator
 from src.models.registry import get_model_by_name
 from src.samplers.diff_dyms import marginal_prob_std, diffusion_coeff
-from src.trainer.soc_btt_ft import fictitious_train_control_btt
+from src.trainer.soc_bptt_ft import fictitious_train_control_bptt
 from src.utils import generate_and_plot_samples
 
 
@@ -81,7 +81,7 @@ def main(cfg: DictConfig) -> None:
     # Initialize the aggregator
     aggregator_cfg = soc_config.aggregator
     aggregator = ImageMaskAggregator(
-        img_dims=(1, 28, 28),
+        img_dims=tuple(cfg.exps.data.loader.img_size),
         num_processes=soc_config.num_control_agents,
         device=device, 
         **aggregator_cfg
@@ -90,7 +90,7 @@ def main(cfg: DictConfig) -> None:
     from tqdm.auto import tqdm
     pbar = tqdm(range(soc_config.outer_iters), desc="Training control policy")
     for step in pbar:
-        loss_dict = fictitious_train_control_btt(
+        loss_dict = fictitious_train_control_bptt(
             score_model,
             classifier,
             control_agents,

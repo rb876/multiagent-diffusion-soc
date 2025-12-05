@@ -1,5 +1,6 @@
 loader:
   name: mnist
+  img_size: [1, 28, 28]
   batch_size: 16
   shuffle: true
   num_workers: 4

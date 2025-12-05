@@ -9,9 +9,10 @@ from hydra.utils import to_absolute_path
 from omegaconf import DictConfig, OmegaConf
 
 from src.envs.aggregator import ImageMaskAggregator
+from src.envs.registry import get_optimality_criterion
 from src.models.registry import get_model_by_name
 from src.samplers.diff_dyms import marginal_prob_std, diffusion_coeff
-from src.trainer.soc_btt_ft import train_control_btt
+from src.trainer.soc_bptt_ft import train_control_bptt
 from src.utils import generate_and_plot_samples
 
 
@@ -44,7 +45,7 @@ def main(cfg: DictConfig) -> None:
             wandb_run = wandb_module.init(**wandb_kwargs)
             wandb_run.config.update(OmegaConf.to_container(cfg, resolve=True), allow_val_change=True)
 
-    # Load score model, classifier, and control nets
+    # Load score model, classifier, and control nets.
     marginal_prob_std_fn = functools.partial(marginal_prob_std, sigma=sigma, device=device)
     diffusion_coeff_fn = functools.partial(diffusion_coeff, sigma=sigma, device=device)
     score_model_cfg = OmegaConf.to_container(cfg.exps.score_model, resolve=True)
@@ -58,7 +59,7 @@ def main(cfg: DictConfig) -> None:
     score_model.requires_grad_(False)
     _load_state(score_model, soc_config.path_to_score_model_checkpoint, device)
 
-    # Load classifier
+    # Load classifier.
     classifier_cfg = OmegaConf.to_container(cfg.exps.classifier_model, resolve=True)
     classifier_name = classifier_cfg.pop("name")
     classifier = get_model_by_name(
@@ -67,6 +68,11 @@ def main(cfg: DictConfig) -> None:
     ).to(device)
     classifier.eval()
     _load_state(classifier, soc_config.path_to_classifier_checkpoint, device)
+    # Initialize optimality criterion based on the classifier.
+    optimality_criterion = get_optimality_criterion(
+        name=soc_config.optimality_criterion.name, 
+        classifier=classifier
+    ).to(device)
 
     # Initialize control nets
     control_cfg = OmegaConf.to_container(cfg.exps.control_net_model, resolve=True)
@@ -85,10 +91,10 @@ def main(cfg: DictConfig) -> None:
         lr=soc_config.learning_rate
     )
 
-    # Initialize the aggregator
+    # Initialize the aggregator.
     aggregator_cfg = soc_config.aggregator
     aggregator = ImageMaskAggregator(
-        img_dims=(1, 28, 28),
+        img_dims=tuple(cfg.exps.data.loader.img_size),
         num_processes=soc_config.num_control_agents,
         device=device,
         **aggregator_cfg
@@ -97,9 +103,9 @@ def main(cfg: DictConfig) -> None:
     from tqdm.auto import tqdm
     pbar = tqdm(range(soc_config.iters), desc="Training control policy")
     for step in pbar:
-        loss, info = train_control_btt(
+        loss, info = train_control_bptt(
             batch_size=soc_config.batch_size,
-            classifier=classifier,
+            optimality_criterion=optimality_criterion,
             control_agents=control_agents,
             aggregator=aggregator,
             device=device,
@@ -111,7 +117,7 @@ def main(cfg: DictConfig) -> None:
             optimizer=optimizer,
             running_optimality_reg=soc_config.running_optimality_reg,
             score_model=score_model,
-            target_digit=soc_config.target_digit,
+            optimality_target=soc_config.optimality_target,
             debug=soc_config.debug,
         )
         loss_value = float(loss)
@@ -122,7 +128,7 @@ def main(cfg: DictConfig) -> None:
                 {
                     "train/loss": loss_value,
                     "train/lr": optimizer.param_groups[0]["lr"],
-                    "train/target_digit": soc_config.target_digit,
+                    "train/optimality_target": soc_config.optimality_target,
                     "iteration": step + 1,
                 },
                 step=step + 1,
@@ -142,7 +148,6 @@ def main(cfg: DictConfig) -> None:
         )
         if should_eval and generate_and_plot_samples is not None:
             samples = generate_and_plot_samples(
-                classifier=classifier,
                 control_agents=control_agents,
                 aggregator=aggregator,
                 device=str(device),

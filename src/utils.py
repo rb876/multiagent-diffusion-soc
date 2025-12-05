@@ -3,7 +3,6 @@ from src.samplers.samplers import euler_maruyama_controlled_sampler
 def generate_and_plot_samples(
     score_model,
     control_agents,
-    classifier,
     aggregator,
     marginal_prob_std_fn,
     diffusion_coeff_fn,
@@ -16,7 +15,6 @@ def generate_and_plot_samples(
 
     # Set all networks in eval mode
     score_model.eval()
-    classifier.eval()
     
     # Set all control agents in eval mode
     for control_net in control_agents.values():
