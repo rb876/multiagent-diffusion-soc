@@ -112,6 +112,7 @@ def main(cfg: DictConfig) -> None:
             inner_iters=soc_config.inner_iters,
             running_optimality_reg=soc_config.running_optimality_reg,
             learning_rate=soc_config.learning_rate,
+            debug=soc_config.debug,
         )
 
         if isinstance(loss_dict, dict):
