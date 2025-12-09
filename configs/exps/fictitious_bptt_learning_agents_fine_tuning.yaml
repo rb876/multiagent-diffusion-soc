@@ -27,6 +27,8 @@ soc:
     use_overlap: true
     overlap_size: 4
   debug: true
+  optimality_criterion: 
+    name: classifier_ce
 
 wandb:
   project: soc-agent-diffusion

@@ -1,7 +1,8 @@
 import torch
-from torch.nn import functional as F
 
+from collections import defaultdict
 from src.trainer.utils import compute_grad_norms
+
 
 def train_control_bptt(
     score_model,
@@ -139,33 +140,41 @@ def train_control_bptt(
 
 def fictitious_train_control_bptt(
     score_model,
-    classifier,
+    optimality_criterion,
     control_agents,
     aggregator,
     marginal_prob_std_fn,
     diffusion_coeff_fn,
-    target_digit,
+    optimality_target,
     num_steps,
     inner_iters,
     batch_size=64,
     device="cuda",
     eps=1e-3,
     lambda_reg=0.1,
-    running_class_reg=1.0,
+    running_optimality_reg=1.0,
     learning_rate=1e-4,
+    debug=False,
 ):
     """Fictitious-play style training of an arbitrary number of control policies."""
-
+    
+    # --- Modes ---
+    # Set models to appropriate modes
     agent_keys = sorted(control_agents.keys())
     if not agent_keys:
         raise ValueError("No control agents provided for fictitious training.")
 
+    # Setup optimizers for each control agent. Note: each agent has its own optimizer.
     optimizers = {
         key: torch.optim.Adam(control_agents[key].parameters(), lr=learning_rate)
         for key in agent_keys
     }
 
+    # Initialize info dict for debugging if needed
+    local_info = {}
+
     def _train_single_control_policy(player_key):
+        """Train a single control policy while keeping others fixed."""
         for key in agent_keys:
             if key == player_key:
                 control_agents[key].train()
@@ -173,8 +182,11 @@ def fictitious_train_control_bptt(
                 control_agents[key].eval()
 
         optimizer = optimizers[player_key]
+        # Reset gradients.
         optimizer.zero_grad()
 
+        # --- Initialisation ---
+        # Initialize dynamics parameters.
         time_steps = torch.linspace(1.0, eps, num_steps, device=device)
         if len(time_steps) < 2:
             raise ValueError("num_steps must be at least 2 to compute a diffusion step.")
@@ -190,22 +202,26 @@ def fictitious_train_control_bptt(
 
         cumulative_control_loss = torch.tensor(0.0, device=device)
         cumulative_optimality_loss = torch.tensor(0.0, device=device)
-
         for _, t_val in enumerate(time_steps):
             batch_time_step = torch.full((batch_size,), t_val, device=device)
 
+            # Diffusion coefficients
             g = diffusion_coeff_fn(batch_time_step)
             g_sq = (g**2)[:, None, None, None]
             g_noise = g[:, None, None, None]
 
+            # Aggregate current agent states
             Y_t = aggregator([agent_states[key] for key in agent_keys])
-
+        
+            # Compute controls and scores for all agents
             controls = {}
             for key in agent_keys:
                 control_input = torch.cat([agent_states[key], Y_t], dim=1)
                 if key == player_key:
                     controls[key] = control_agents[key](control_input, batch_time_step)
                 else:
+                    # Other agents are fixed during this training step.
+                    # No gradient computation for their control policies.
                     with torch.no_grad():
                         controls[key] = control_agents[key](control_input, batch_time_step)
 
@@ -214,18 +230,23 @@ def fictitious_train_control_bptt(
                 scores[key] = score_model(agent_states[key], batch_time_step)
 
             current_std = marginal_prob_std_fn(batch_time_step)[:, None, None, None]
+
+            # Compute denoised estimates for all agents (TWEEDY ESTIMATOR).
             x0_hats = {
                 key: agent_states[key] + (current_std**2) * scores[key]
                 for key in agent_keys
             }
-
+            # Tweedie estimator for each agent:
+            #     \hat x_0 = x_t + σ_t^2 * score(x_t, t)
+            # Aggregate the denoised estimates across agents for running optimality loss.
             Y_0_hat = aggregator([x0_hats[key] for key in agent_keys])
 
-            target_labels = torch.full((batch_size,), target_digit, device=device, dtype=torch.long)
-            logits_running = classifier(Y_0_hat)
-            running_loss = F.cross_entropy(logits_running, target_labels)
-            cumulative_optimality_loss += running_loss * step_size
-
+            # Running optimality cost ∫c(Ŷ_0(t),t) dt
+            # Compute running optimality loss.
+            cumulative_optimality_loss += optimality_criterion.get_running_optimality_loss(
+                Y_0_hat, optimality_target) * step_size
+            
+            # Progress system dynamics for all agents (Euler–Maruyama)
             noise_scale = torch.sqrt(step_size) * g_noise
             for key in agent_keys:
                 drift = g_sq * scores[key]
@@ -237,29 +258,58 @@ def fictitious_train_control_bptt(
                         agent_states[key] = mean_state + noise_scale * torch.randn_like(agent_states[key])
 
             cumulative_control_loss += torch.mean(controls[player_key] ** 2) * step_size
-
+        
+        # --- Terminal cost on Y_1 ---
         Y_final = aggregator([agent_states[key] for key in agent_keys])
-        target_labels = torch.full((batch_size,), target_digit, device=device, dtype=torch.long)
-        logits = classifier(Y_final)
-        optimality_loss = F.cross_entropy(logits, target_labels)
+        optimality_loss = optimality_criterion.get_terminal_optimality_loss(Y_final, optimality_target)
 
+        # Compute overall SOC loss to backpropagate.
         total_loss = (
             lambda_reg * cumulative_control_loss
             + optimality_loss
-            + running_class_reg * cumulative_optimality_loss
+            + running_optimality_reg * cumulative_optimality_loss
         )
-
+        # --- Backprop & update ---
         total_loss.backward()
-        torch.nn.utils.clip_grad_norm_(control_agents[player_key].parameters(), 1.0)
-        optimizer.step()
 
-        return total_loss.item()
+        if debug:
+            local_info ['cumulative_control_loss'] = cumulative_control_loss.item()
+            local_info ['cumulative_optimality_loss'] = cumulative_optimality_loss.item()
+            local_info ['optimality_loss'] = optimality_loss.item()
+            local_info ['agents'] = [controls[key] for key in agent_keys]
+            local_info ['grad_norms'] = compute_grad_norms(control_agents)
+        
+        torch.nn.utils.clip_grad_norm_(control_agents[player_key].parameters(), 1.0)
+        # Update control agent parameters.
+        optimizer.step()
+        return total_loss.item(), local_info
 
     loss_dict = {}
+    info_dict = {}  # per-agent averaged info
     for key in agent_keys:
-        loss_value = None
-        for _ in range(inner_iters):
-            loss_value = _train_single_control_policy(player_key=key)
-        loss_dict[key] = loss_value
+        loss_sum = 0.0
+        scalar_info_sums = defaultdict(float)
+        last_non_scalar_info = {}
 
-    return loss_dict
+        for _ in range(inner_iters):
+            loss_value, info_step = _train_single_control_policy(player_key=key)
+            loss_sum += loss_value
+
+            if debug and info_step:
+                for k, v in info_step.items():
+                    # average only numeric scalars
+                    if isinstance(v, (int, float)):
+                        scalar_info_sums[k] += float(v)
+                    else:
+                        # keep the latest non-scalar entries (e.g. agents, grad_norms)
+                        last_non_scalar_info[k] = v
+
+        avg_loss = loss_sum / inner_iters
+        loss_dict[key] = avg_loss
+
+        if debug:
+            avg_info = {k: v / inner_iters for k, v in scalar_info_sums.items()}
+            avg_info.update(last_non_scalar_info)  # attach non-averaged info
+            info_dict[key] = avg_info
+
+    return loss_dict, info_dict if debug else {}

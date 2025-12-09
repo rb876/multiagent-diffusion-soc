@@ -4,11 +4,13 @@ from typing import Dict, Any
 import hydra
 import torch
 import wandb
-from torchvision.utils import make_grid
+
 from hydra.utils import to_absolute_path
 from omegaconf import DictConfig, OmegaConf
+from torchvision.utils import make_grid
 
 from src.envs.aggregator import ImageMaskAggregator
+from src.envs.registry import get_optimality_criterion
 from src.models.registry import get_model_by_name
 from src.samplers.diff_dyms import marginal_prob_std, diffusion_coeff
 from src.trainer.soc_bptt_ft import fictitious_train_control_bptt
@@ -67,6 +69,10 @@ def main(cfg: DictConfig) -> None:
     ).to(device)
     classifier.eval()
     _load_state(classifier, soc_config.path_to_classifier_checkpoint, device)
+    optimality_criterion = get_optimality_criterion(
+        name=soc_config.optimality_criterion.name, 
+        classifier=classifier
+    ).to(device)
 
     # Initialize control nets
     control_cfg = OmegaConf.to_container(cfg.exps.control_net_model, resolve=True)
@@ -90,21 +96,21 @@ def main(cfg: DictConfig) -> None:
     from tqdm.auto import tqdm
     pbar = tqdm(range(soc_config.outer_iters), desc="Training control policy")
     for step in pbar:
-        loss_dict = fictitious_train_control_bptt(
-            score_model,
-            classifier,
-            control_agents,
-            aggregator,
-            marginal_prob_std_fn,
-            diffusion_coeff_fn,
-            target_digit=soc_config.target_digit,
+        loss_dict, info = fictitious_train_control_bptt(
+            score_model=score_model,
+            optimality_criterion=optimality_criterion,
+            control_agents=control_agents,
+            aggregator=aggregator,
+            marginal_prob_std_fn=marginal_prob_std_fn,
+            diffusion_coeff_fn=diffusion_coeff_fn,
+            optimality_target=soc_config.target_digit,
             num_steps=soc_config.train_num_steps,
             batch_size=soc_config.batch_size,
             device=device,
             eps=soc_config.eps,
             lambda_reg=soc_config.lambda_reg,
             inner_iters=soc_config.inner_iters,
-            running_class_reg=soc_config.running_class_reg,
+            running_optimality_reg=soc_config.running_optimality_reg,
             learning_rate=soc_config.learning_rate,
         )
 
@@ -129,20 +135,26 @@ def main(cfg: DictConfig) -> None:
                 "train/target_digit": soc_config.target_digit,
                 "iteration": step + 1,
             }
-            log_payload.update({f"train/{name}_loss": value for name, value in control_losses.items()})
-            wandb_module.log(log_payload, step=step + 1)
+            if soc_config.get("debug", False) and info:
+                log_payload: Dict[str, Any] = {"train/iteration": step + 1}
+                for k, v in info.items():
+                    if isinstance(v, (float, int)):
+                        log_payload[f"train/{k}"] = v
+                    if isinstance(v, dict):
+                        for kk, vv in v.items():
+                            log_payload[f"train/{k}/{kk}"] = vv
+                wandb_module.log(log_payload, step=step + 1)
 
         should_eval = soc_config.eval_every and (
             step % soc_config.eval_every == 0 or step == soc_config.outer_iters - 1
         )
         if should_eval and generate_and_plot_samples is not None:
             samples = generate_and_plot_samples(
-                score_model,
-                control_agents,
-                classifier,
-                aggregator,
-                marginal_prob_std_fn,
-                diffusion_coeff_fn,
+                score_model=score_model,
+                control_agents=control_agents,
+                aggregator=aggregator,
+                marginal_prob_std_fn=marginal_prob_std_fn,
+                diffusion_coeff_fn=diffusion_coeff_fn,
                 sample_batch_size=soc_config.sample_batch_size,
                 num_steps=soc_config.sample_num_steps,
                 device=str(device),
