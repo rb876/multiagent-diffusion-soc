@@ -12,6 +12,7 @@ from src.envs.aggregator import ImageMaskAggregator
 from src.envs.registry import get_optimality_criterion
 from src.models.registry import get_model_by_name
 from src.samplers.diff_dyms import SDE
+from src.trainer.soc_adjoint_ft import train_control_adjoint
 from src.trainer.soc_bptt_ft import train_control_bptt
 from src.utils import generate_and_plot_samples
 
@@ -102,7 +103,7 @@ def main(cfg: DictConfig) -> None:
     from tqdm.auto import tqdm
     pbar = tqdm(range(soc_config.iters), desc="Training control policy")
     for step in pbar:
-        loss, info = train_control_bptt(
+        loss, info = train_control_adjoint(
             batch_size=soc_config.batch_size,
             optimality_criterion=optimality_criterion,
             control_agents=control_agents,
