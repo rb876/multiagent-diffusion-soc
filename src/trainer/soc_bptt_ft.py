@@ -142,8 +142,7 @@ def fictitious_train_control_bptt(
     optimality_criterion,
     control_agents,
     aggregator,
-    marginal_prob_std_fn,
-    diffusion_coeff_fn,
+    sde,
     optimality_target,
     num_steps,
     inner_iters,
@@ -192,7 +191,7 @@ def fictitious_train_control_bptt(
         step_size = time_steps[0] - time_steps[1]
 
         initial_time = torch.full((batch_size,), time_steps[0], device=device)
-        initial_std = marginal_prob_std_fn(initial_time)[:, None, None, None]
+        initial_std = sde.marginal_prob_std(initial_time)[:, None, None, None]
 
         agent_states = {
             key: torch.randn(batch_size, 1, 28, 28, device=device) * initial_std
@@ -205,7 +204,7 @@ def fictitious_train_control_bptt(
             batch_time_step = torch.full((batch_size,), t_val, device=device)
 
             # Diffusion coefficients
-            g = diffusion_coeff_fn(batch_time_step)
+            g = sde.diffusion_coeff(batch_time_step)
             g_sq = (g**2)[:, None, None, None]
             g_noise = g[:, None, None, None]
 
@@ -228,7 +227,7 @@ def fictitious_train_control_bptt(
             for key in agent_keys:
                 scores[key] = score_model(agent_states[key], batch_time_step)
 
-            current_std = marginal_prob_std_fn(batch_time_step)[:, None, None, None]
+            current_std = sde.marginal_prob_std(batch_time_step)[:, None, None, None]
 
             # Compute denoised estimates for all agents (TWEEDY ESTIMATOR).
             x0_hats = {

@@ -7,7 +7,7 @@ from hydra.core.hydra_config import HydraConfig
 from omegaconf import DictConfig, OmegaConf
 
 from src.models.registry import get_model_by_name
-from src.samplers.diff_dyms import marginal_prob_std, diffusion_coeff
+from src.samplers.diff_dyms import SDE
 from src.trainer.datasets import get_dataset_loader
 from src.trainer.score_trainer import score_model_trainer
 from src.trainer.losses import loss_fn
@@ -28,15 +28,17 @@ def main(cfg: DictConfig) -> None:
     output_dir = hydra_run_dir / checkpoint_subdir
     
     # Create the marginal probability std function
-    # this defines the VP SDE dynamics
+    # this defines the VE SDE dynamics
+    sde = SDE(mode="VE", sigma=training_cfg.sigma, device=device)
+
     sigma = training_cfg.sigma
     marginal_prob_std_fn = functools.partial(
-        marginal_prob_std,
+        sde.marginal_prob_std,
         sigma=sigma,
         device=device,
     )
     diffusion_coeff_fn = functools.partial(
-        diffusion_coeff,
+        sde.diffusion_coeff,
         sigma=sigma,
         device=device,
     )
