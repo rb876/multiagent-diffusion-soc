@@ -29,9 +29,8 @@ def main(cfg: DictConfig) -> None:
     
     # Create the marginal probability std function
     # this defines the VE SDE dynamics
-    sde = SDE(mode="VE", sigma=training_cfg.sigma, device=device)
-
-    sigma = training_cfg.sigma
+    sde = SDE(mode=training_cfg.sde.name, sigma=training_cfg.sde.sigma, device=device)
+    sigma = training_cfg.sde.sigma
     marginal_prob_std_fn = functools.partial(
         sde.marginal_prob_std,
         sigma=sigma,

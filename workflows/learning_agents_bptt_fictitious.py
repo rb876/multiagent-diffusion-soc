@@ -30,7 +30,6 @@ def _load_state(module: torch.nn.Module, checkpoint_path: str, device: torch.dev
 def main(cfg: DictConfig) -> None:
     device = torch.device(cfg.get("device", "cuda" if torch.cuda.is_available() else "cpu"))
     soc_config = cfg.exps.soc
-    sigma = cfg.exps.get("diffusion", {}).get("sigma", 25.0)
 
     wandb_run = None
     wandb_module = None
@@ -47,9 +46,7 @@ def main(cfg: DictConfig) -> None:
             wandb_run.config.update(OmegaConf.to_container(cfg, resolve=True), allow_val_change=True)
 
     # Load score model, classifier, and control nets
-
-
-    sde = SDE(mode="VE", sigma=sigma, device=device)
+    sde = SDE(mode= cfg.exps.sde.name, sigma=cfg.exps.sde.sigma, device=device)
     score_model_cfg = OmegaConf.to_container(cfg.exps.score_model, resolve=True)
     score_model_name = score_model_cfg.pop("name")
     score_model = get_model_by_name(
