@@ -33,8 +33,7 @@ def euler_maruyama_controlled_sampler(
     score_model,
     control_agents,
     aggregator,
-    marginal_prob_std,
-    diffusion_coeff,
+    sde,
     batch_size=8,
     num_steps=500,
     device="cuda",
@@ -52,7 +51,7 @@ def euler_maruyama_controlled_sampler(
 
     states = {
         key: torch.randn(batch_size, 1, 28, 28, device=device)
-        * marginal_prob_std(t)[:, None, None, None]
+        * sde.marginal_prob_std(t)[:, None, None, None]
         for key in agent_keys
     }
 
@@ -60,7 +59,7 @@ def euler_maruyama_controlled_sampler(
         for idx in range(len(time_steps)):
             batch_time_step = torch.ones(batch_size, device=device) * time_steps[idx]
 
-            g = diffusion_coeff(batch_time_step)
+            g = sde.diffusion_coeff(batch_time_step)
             g_sq = (g**2)[:, None, None, None]
             noise_scale = torch.sqrt(step_size) * g[:, None, None, None]
 

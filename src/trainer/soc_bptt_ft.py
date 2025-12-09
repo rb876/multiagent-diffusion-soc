@@ -9,8 +9,7 @@ def train_control_bptt(
     optimality_criterion,
     control_agents,
     aggregator,
-    marginal_prob_std_fn,
-    diffusion_coeff_fn,
+    sde,
     optimizer,
     optimality_target,
     num_steps,
@@ -49,7 +48,7 @@ def train_control_bptt(
     # --- Initialisation ---
     # Initialize dynamics parameters.
     initial_time = torch.full((batch_size,), time_steps[0], device=device)
-    initial_std = marginal_prob_std_fn(initial_time)[:, None, None, None]
+    initial_std = sde.marginal_prob_std(initial_time)[:, None, None, None]
     # Initialize system states for all agents.
     # Here we assume that each states has a control agent associated to it.
     system_states = {
@@ -68,7 +67,7 @@ def train_control_bptt(
         batch_time_step = torch.full((batch_size,), time_steps[t_idx], device=device)
 
         # Diffusion coefficients
-        g = diffusion_coeff_fn(batch_time_step)
+        g = sde.diffusion_coeff(batch_time_step)
         g_sq = (g**2)[:, None, None, None]
         g_noise = g[:, None, None, None]
 
@@ -85,7 +84,7 @@ def train_control_bptt(
             # This will need to be modifid as we expect to have different score models per agent in the future.
             scores[key] = score_model(system_states[key], batch_time_step)
         # Compute denoised estimates for all agents (TWEEDY ESTIMATOR).
-        current_std = marginal_prob_std_fn(batch_time_step)[:, None, None, None]
+        current_std = sde.marginal_prob_std(batch_time_step)[:, None, None, None]
         for key in agent_keys:
             x0_hats[key] = system_states[key] + (current_std**2) * scores[key]
 

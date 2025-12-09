@@ -11,7 +11,7 @@ from omegaconf import DictConfig, OmegaConf
 from src.envs.aggregator import ImageMaskAggregator
 from src.envs.registry import get_optimality_criterion
 from src.models.registry import get_model_by_name
-from src.samplers.diff_dyms import marginal_prob_std, diffusion_coeff
+from src.samplers.diff_dyms import SDE
 from src.trainer.soc_bptt_ft import train_control_bptt
 from src.utils import generate_and_plot_samples
 
@@ -46,13 +46,12 @@ def main(cfg: DictConfig) -> None:
             wandb_run.config.update(OmegaConf.to_container(cfg, resolve=True), allow_val_change=True)
 
     # Load score model, classifier, and control nets.
-    marginal_prob_std_fn = functools.partial(marginal_prob_std, sigma=sigma, device=device)
-    diffusion_coeff_fn = functools.partial(diffusion_coeff, sigma=sigma, device=device)
+    sde = SDE(mode="VE", sigma=sigma, device=device)
     score_model_cfg = OmegaConf.to_container(cfg.exps.score_model, resolve=True)
     score_model_name = score_model_cfg.pop("name")
     score_model = get_model_by_name(
         score_model_name,
-        marginal_prob_std=marginal_prob_std_fn,
+        marginal_prob_std=sde.marginal_prob_std,
         **score_model_cfg
     ).to(device)
     score_model.eval()
@@ -81,7 +80,7 @@ def main(cfg: DictConfig) -> None:
     control_agents = {}
     for i in range(soc_config.num_control_agents):
         control_agents[i] = get_model_by_name(
-            control_name, marginal_prob_std=marginal_prob_std_fn, **control_cfg
+            control_name, marginal_prob_std=sde.marginal_prob_std, **control_cfg
         ).to(device)
         control_agents[i].train()
 
@@ -108,11 +107,10 @@ def main(cfg: DictConfig) -> None:
             optimality_criterion=optimality_criterion,
             control_agents=control_agents,
             aggregator=aggregator,
+            sde=sde,
             device=device,
-            diffusion_coeff_fn=diffusion_coeff_fn,
             eps=soc_config.eps,
             lambda_reg=soc_config.lambda_reg,
-            marginal_prob_std_fn=marginal_prob_std_fn,
             num_steps=soc_config.train_num_steps,
             optimizer=optimizer,
             running_optimality_reg=soc_config.running_optimality_reg,
@@ -151,8 +149,7 @@ def main(cfg: DictConfig) -> None:
                 control_agents=control_agents,
                 aggregator=aggregator,
                 device=str(device),
-                diffusion_coeff_fn=diffusion_coeff_fn,
-                marginal_prob_std_fn=marginal_prob_std_fn,
+                sde=sde,
                 num_steps=soc_config.sample_num_steps,
                 sample_batch_size=soc_config.sample_batch_size,
                 score_model=score_model,
