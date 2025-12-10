@@ -18,27 +18,24 @@ import torchsde
 
 class MultiAgentControlledSDE(nn.Module):
     """
-    Controlled reverse-time SDE for multiple agents, with an adjoint-friendly
-    flat state y ∈ ℝ^{B×D}.
-
-    Layout of the last dimension:
-
-        y = [ x_0_flat, x_1_flat, ..., x_{N-1}_flat, c_ctrl, c_opt ]
-
-    where:
-        - x_i_flat: flattened image state of agent i (size = C * H * W)
-        - c_ctrl: cumulative control energy ∫ Σ_i ||u_i||² dt  (per sample)
-        - c_opt:  cumulative running optimality ∫ c(Ŷ_0(t), t) dt (per sample)
+    Controlled reverse-time SDE for multiple agents, with an adjoint-friendly implementation.
+    NNOTE: this SDE ONLY supports the aggregation to be a concatentation over channels.
+    NOTE: Assumes image-like agent states of shape [B, C, H, W].
+    State vector y = [x_1, x_2, ..., x_N, c_ctrl, c_opt]
+        where 
+            - x_i: agent i state [B, C, H, W]
+            - c_ctrl: cumulative control cost [B, 1]
+            - c_opt : cumulative optimality cost [B, 1]
     """
 
     def __init__(
         self,
         score_model,
         optimality_criterion,
-        control_agents,       # dict, can have int keys
+        control_agents,
         aggregator,
         sde,
-        agent_keys,           # list / sorted keys of agents
+        agent_keys,
         optimality_target,
         image_shape=(1, 28, 28),
     ):
@@ -108,9 +105,6 @@ class MultiAgentControlledSDE(nn.Module):
 
         return torch.cat(flats, dim=1)         # [B, D]
 
-    # ---------------------------------------------------------
-    # Drift f(t, y) and diffusion g(t, y)
-    # ---------------------------------------------------------
 
     def f(self, t, y):
         """
@@ -130,7 +124,7 @@ class MultiAgentControlledSDE(nn.Module):
         t_phys = 1.0 - t
         batch_time = torch.full((B,), t_phys, device=device, dtype=dtype)
 
-        states, c_ctrl, c_opt = self._unpack_state(y)
+        states, _, _ = self._unpack_state(y)
 
         # Diffusion coefficient and reverse-time drift factor
         g = self.sde.diffusion_coeff(batch_time)          # [B]
@@ -295,7 +289,6 @@ def train_control_adjoint(
 
     # y0: [B, D]
     y0 = torch.cat(flats, dim=1)
-
     sde_ctrl = MultiAgentControlledSDE(
         score_model=score_model,
         optimality_criterion=optimality_criterion,
@@ -314,7 +307,7 @@ def train_control_adjoint(
         y0,
         ts,
         method="srk",
-        dt=dt,  # smaller internal step for stability
+        dt=dt,
     )
 
     # final state y_T: [B, D]
@@ -330,8 +323,8 @@ def train_control_adjoint(
     )
     # --- compute losses ---
     # integrated costs (empirical expectations)
-    control_cost = c_ctrl_final.mean()        # ≈ ∫ E[ Σ ||u||² ] dt
-    running_opt_cost = c_opt_final.mean()     # ≈ ∫ E[ c(Ŷ_0, t) ] dt
+    control_cost = c_ctrl_final.mean()
+    running_opt_cost = c_opt_final.mean()
     # final SOC objective
     total_loss = (
         lambda_reg * control_cost
