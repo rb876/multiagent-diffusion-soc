@@ -14,6 +14,7 @@ from src.envs.registry import get_optimality_criterion
 from src.models.registry import get_model_by_name
 from src.samplers.diff_dyms import SDE
 from src.trainer.soc_bptt_ft import fictitious_train_control_bptt
+from src.trainer.sco_adjoint_fict_ft import fictitious_train_control_adjoint
 from src.utils import generate_and_plot_samples
 
 
@@ -91,10 +92,20 @@ def main(cfg: DictConfig) -> None:
         **aggregator_cfg
     )
 
+    # Select training method
+    if soc_config.method == "bptt":
+        train_soc_fn = fictitious_train_control_bptt
+    elif soc_config.method == "adjoint":
+        train_soc_fn = fictitious_train_control_adjoint
+    else:
+        raise ValueError(f"Unknown training method: {soc_config.method}")
+
     from tqdm.auto import tqdm
     pbar = tqdm(range(soc_config.outer_iters), desc="Training control policy")
     for step in pbar:
-        loss_dict, info = fictitious_train_control_bptt(
+        # NOTE: we intialise the optmizer inside the training function to reset it every iteration.
+        # We could also pass in the optimizer state if we wanted to keep it across iterations.
+        loss_dict, info = train_soc_fn(
             score_model=score_model,
             optimality_criterion=optimality_criterion,
             control_agents=control_agents,
@@ -109,6 +120,7 @@ def main(cfg: DictConfig) -> None:
             inner_iters=soc_config.inner_iters,
             running_optimality_reg=soc_config.running_optimality_reg,
             learning_rate=soc_config.learning_rate,
+            image_dim=tuple(cfg.exps.data.loader.img_size),
             debug=soc_config.debug,
         )
 

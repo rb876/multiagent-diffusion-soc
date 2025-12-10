@@ -100,10 +100,18 @@ def main(cfg: DictConfig) -> None:
         **aggregator_cfg
     )
 
+    # Select training method
+    if soc_config.method == "bptt":
+        train_soc_fn = train_control_bptt
+    elif soc_config.method == "adjoint":
+        train_soc_fn = train_control_adjoint
+    else:
+        raise ValueError(f"Unknown training method: {soc_config.method}")
+
     from tqdm.auto import tqdm
     pbar = tqdm(range(soc_config.iters), desc="Training control policy")
     for step in pbar:
-        loss, info = train_control_adjoint(
+        loss, info = train_soc_fn(
             batch_size=soc_config.batch_size,
             optimality_criterion=optimality_criterion,
             control_agents=control_agents,
@@ -117,6 +125,7 @@ def main(cfg: DictConfig) -> None:
             running_optimality_reg=soc_config.running_optimality_reg,
             score_model=score_model,
             optimality_target=soc_config.optimality_target,
+            image_dim=tuple(cfg.exps.data.loader.img_size),
             debug=soc_config.debug,
         )
         loss_value = float(loss)
