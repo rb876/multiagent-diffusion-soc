@@ -76,6 +76,21 @@
                 "exps/fictitious_bptt_learning_agents_fine_tuning"
             ]
 
+        },        
+        {
+            "name": "Python Debugger: Learning Agents Fictitious Adjoint Evaluation",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "workflows.learning_agents_bptt_fictitious",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "args": [
+                "--config-path",
+                "../configs",
+                "--config-name",
+                "exps/fictitious_adjoint_learning_agents_fine_tuning"
+            ]
+
         }
     ]
 }

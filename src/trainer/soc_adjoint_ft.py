@@ -228,7 +228,8 @@ class MultiAgentControlledSDE(nn.Module):
 
         g_full = torch.cat(g_vec_list, dim=1)             # [B,D]
         return g_full
-    
+
+
 def train_control_adjoint(
     score_model,
     optimality_criterion,
