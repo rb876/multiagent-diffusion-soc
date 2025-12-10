@@ -2,27 +2,13 @@ import torch
 import torch.nn as nn
 import torchsde
 
-import torch
-import torch.nn as nn
-import torchsde
-
-
-import torch
-import torch.nn as nn
-import torchsde
-
-import torch
-import torch.nn as nn
-import torchsde
-
-
 class MultiAgentControlledSDE(nn.Module):
     """
     Controlled reverse-time SDE for multiple agents, with an adjoint-friendly implementation.
     NNOTE: this SDE ONLY supports the aggregation to be a concatentation over channels.
     NOTE: Assumes image-like agent states of shape [B, C, H, W].
     State vector y = [x_1, x_2, ..., x_N, c_ctrl, c_opt]
-        where 
+        where:
             - x_i: agent i state [B, C, H, W]
             - c_ctrl: cumulative control cost [B, 1]
             - c_opt : cumulative optimality cost [B, 1]
@@ -60,6 +46,7 @@ class MultiAgentControlledSDE(nn.Module):
         )
         self.noise_type = "diagonal"
         self.sde_type = "ito"
+        self.u_max = 3.0  # max control magnitude
 
 
     def _unpack_state(self, y):
@@ -139,11 +126,12 @@ class MultiAgentControlledSDE(nn.Module):
 
         # Controls + scores for each agent
         for key in self.agent_keys:
-            x_k = states[key]                             # [B,1,H,W]
+            x_k = states[key]                             # [B,C,H,W]
             ctrl_input = torch.cat([x_k, Y_t], dim=1)     # concat over channels
             ctrl_net = self.control_agents[str(key)]
-            controls[key] = ctrl_net(ctrl_input, batch_time)   # [B,1,H,W]
-            scores[key] = self.score_model(x_k, batch_time)    # [B,1,H,W]
+            raw_ctrl_net =  ctrl_net(ctrl_input, batch_time)
+            controls[key] = torch.tanh(raw_ctrl_net) * self.u_max   # [B,C,H,W]
+            scores[key] = self.score_model(x_k, batch_time)    # [B,C,H,W]
 
         # Tweedie estimator: x0_hat = x_t + σ_t^2 * score
         current_std = self.sde.marginal_prob_std(batch_time)[:, None, None, None]
@@ -164,7 +152,7 @@ class MultiAgentControlledSDE(nn.Module):
         # per-sample control energy: Σ_i E[||u_i||²] over image dims
         control_energy = 0.0
         for key in self.agent_keys:
-            u = controls[key]  # [B,1,H,W]
+            u = controls[key]  # [B,C,H,W]
             control_energy = control_energy + u.pow(2).mean(dim=(1, 2, 3), keepdim=True)  # [B,1]
 
         dc_ctrl_dt = control_energy                         # [B,1]
@@ -238,7 +226,7 @@ def train_control_adjoint(
     eps,
     lambda_reg,
     running_optimality_reg,
-    image_shape=(1, 28, 28),
+    image_dim=(1, 28, 28),
     debug=False,
 ):
     """
@@ -265,7 +253,7 @@ def train_control_adjoint(
         raise RuntimeError(f"ts is not strictly increasing: {ts}")
 
     dt = (ts[1] - ts[0]).item()
-    C, H, W = image_shape
+    C, H, W = image_dim
     t0_phys = 1.0
     initial_time = torch.full((batch_size,), t0_phys, device=device)
     initial_std = sde.marginal_prob_std(initial_time)[:, None, None, None]  # [B,1,1,1]
@@ -297,7 +285,7 @@ def train_control_adjoint(
         sde=sde,
         agent_keys=agent_keys,
         optimality_target=optimality_target,
-        image_shape=image_shape,
+        image_shape=image_dim,
     ).to(device)
 
     # --- forward integration via adjoint ---
@@ -307,7 +295,7 @@ def train_control_adjoint(
         y0,
         ts,
         method="srk",
-        dt=dt,
+        dt=dt, # smaller step for better stability
     )
 
     # final state y_T: [B, D]
@@ -340,7 +328,8 @@ def train_control_adjoint(
             f"run_cost={running_opt_cost.item():.3f}, "
             f"terminal={optimality_loss.item():.3f}"
         )
-
+    
+    max_norm = 1.0    # tune
     info = {}
     if debug:
         info["cumulative_control_loss"] = (lambda_reg * control_cost).item()
@@ -348,11 +337,12 @@ def train_control_adjoint(
         info["optimality_loss"] = optimality_loss.item()
         info["grad_norms"] = {}
         for k in agent_keys:
-            gn = torch.nn.utils.clip_grad_norm_(control_agents[k].parameters(), 1.0)
-            info["grad_norms"][k] = float(gn)
+            gn = torch.nn.utils.clip_grad_norm_(control_agents[k].parameters(), max_norm)
+            # if you want *effective* norm, log min(gn, max_norm)
+            info["grad_norms"][k] = float(min(gn, max_norm))
     else:
         for k in agent_keys:
-            torch.nn.utils.clip_grad_norm_(control_agents[k].parameters(), 1.0)
+            torch.nn.utils.clip_grad_norm_(control_agents[k].parameters(), max_norm)
 
     optimizer.step()
     return float(total_loss.item()), info

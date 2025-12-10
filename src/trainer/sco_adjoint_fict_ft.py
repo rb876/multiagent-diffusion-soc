@@ -22,6 +22,7 @@ class MultiAgentControlledSDE(nn.Module):
         self.noise_type = "diagonal"        
         self.sde_type = "stratonovich" 
         self.active_agent_key = None
+        self.u_max = 3.0
 
     def set_active_agent(self, key):
         self.active_agent_key = key
@@ -53,7 +54,6 @@ class MultiAgentControlledSDE(nn.Module):
         batch_time = torch.full((B,), t_phys, device=y.device, dtype=y.dtype)
 
         states, _, _ = self._unpack_state(y)
-
         g = self.sde.diffusion_coeff(batch_time)
         g_sq = (g ** 2).view(B, 1, 1, 1)
 
@@ -70,9 +70,8 @@ class MultiAgentControlledSDE(nn.Module):
                 with torch.no_grad():
                     u = self.control_agents[str(k)](ctrl_in, batch_time).detach()
             
-            u = u.clamp(-50.0, 50.0)
-            s = self.score_model(x, batch_time).clamp(-100.0, 100.0)
-
+            s = self.score_model(x, batch_time)
+            u =  torch.tanh(self.control_agents[str(k)](ctrl_in, batch_time)) * self.u_max
             controls[k] = u
             scores[k] = s
             x0_hats[k] = x + (current_std ** 2) * s
@@ -232,7 +231,7 @@ def fictitious_train_control_adjoint(
             loss_acc += total_loss.item()
             
             if debug:
-                info_dict[active_key] = {'loss': total_loss.item(), 'ctrl': ctrl_loss.item()}
+                info_dict[active_key] = {'loss': total_loss.item(), 'ctrl': ctrl_loss.item(), 'run': run_loss.item()}
 
         loss_dict[active_key] = loss_acc / inner_iters
 
