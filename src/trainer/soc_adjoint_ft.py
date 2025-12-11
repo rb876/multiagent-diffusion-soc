@@ -38,6 +38,7 @@ class MultiAgentControlledSDE(nn.Module):
         self.num_agents = len(self.agent_keys)
 
         self.C, self.H, self.W = image_shape
+        assert self.C == 1, "Only single-channel images supported for agent states."
         self.state_dim_per_agent = self.C * self.H * self.W 
         self.total_dim = self.num_agents * self.state_dim_per_agent + 2
 
@@ -46,7 +47,6 @@ class MultiAgentControlledSDE(nn.Module):
         )
         self.noise_type = "diagonal"
         self.sde_type = "ito"
-        self.u_max = 3.0  # max control magnitude
 
 
     def _unpack_state(self, y):
@@ -129,8 +129,7 @@ class MultiAgentControlledSDE(nn.Module):
             x_k = states[key]                             # [B,C,H,W]
             ctrl_input = torch.cat([x_k, Y_t], dim=1)     # concat over channels
             ctrl_net = self.control_agents[str(key)]
-            raw_ctrl_net =  ctrl_net(ctrl_input, batch_time)
-            controls[key] = torch.tanh(raw_ctrl_net) * self.u_max   # [B,C,H,W]
+            controls[key] = ctrl_net(ctrl_input, batch_time)   # [B,C,H,W]
             scores[key] = self.score_model(x_k, batch_time)    # [B,C,H,W]
 
         # Tweedie estimator: x0_hat = x_t + σ_t^2 * score
