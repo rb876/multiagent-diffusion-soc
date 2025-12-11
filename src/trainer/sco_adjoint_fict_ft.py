@@ -22,7 +22,6 @@ class MultiAgentControlledSDE(nn.Module):
         self.noise_type = "diagonal"        
         self.sde_type = "stratonovich" 
         self.active_agent_key = None
-        self.u_max = 3.0
 
     def set_active_agent(self, key):
         self.active_agent_key = key
@@ -71,7 +70,7 @@ class MultiAgentControlledSDE(nn.Module):
                     u = self.control_agents[str(k)](ctrl_in, batch_time).detach()
             
             s = self.score_model(x, batch_time)
-            u =  torch.tanh(self.control_agents[str(k)](ctrl_in, batch_time)) * self.u_max
+            u =  self.control_agents[str(k)](ctrl_in, batch_time)
             controls[k] = u
             scores[k] = s
             x0_hats[k] = x + (current_std ** 2) * s
