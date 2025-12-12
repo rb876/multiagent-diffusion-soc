@@ -30,7 +30,6 @@ def _load_state(module: torch.nn.Module, checkpoint_path: str, device: torch.dev
 def main(cfg: DictConfig) -> None:
     device = torch.device(cfg.get("device", "cuda" if torch.cuda.is_available() else "cpu"))
     soc_config = cfg.exps.soc
-    sigma = cfg.exps.get("diffusion", {}).get("sigma", 25.0)
 
     wandb_run = None
     wandb_module = None
@@ -163,6 +162,8 @@ def main(cfg: DictConfig) -> None:
                 num_steps=soc_config.sample_num_steps,
                 sample_batch_size=soc_config.sample_batch_size,
                 score_model=score_model,
+                debug=soc_config.debug,
+                step=step,
             )
             if wandb_run is not None:
                 log_payload: Dict[str, Any] = {"eval/iteration": step + 1}

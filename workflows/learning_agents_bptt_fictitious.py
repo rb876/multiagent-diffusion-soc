@@ -167,6 +167,8 @@ def main(cfg: DictConfig) -> None:
                 sample_batch_size=soc_config.sample_batch_size,
                 num_steps=soc_config.sample_num_steps,
                 device=str(device),
+                debug=soc_config.debug,
+                step=step,
             )
             if wandb_run is not None:
                 log_payload: Dict[str, Any] = {"eval/iteration": step + 1}

@@ -34,11 +34,14 @@ def euler_maruyama_controlled_sampler(
     control_agents,
     aggregator,
     sde,
+    image_dim: tuple = (1, 28, 28),
     batch_size=8,
     num_steps=500,
     device="cuda",
     eps=1e-3,
+    debug: bool = False,
 ):
+    
     agent_keys = sorted(control_agents.keys())
     if not agent_keys:
         raise ValueError("No control agents provided to controlled sampler.")
@@ -50,10 +53,17 @@ def euler_maruyama_controlled_sampler(
     step_size = time_steps[0] - time_steps[1]
 
     states = {
-        key: torch.randn(batch_size, 1, 28, 28, device=device)
+        key: torch.randn(batch_size, *image_dim, device=device)
         * sde.marginal_prob_std(t)[:, None, None, None]
         for key in agent_keys
     }
+
+    if debug:
+        print("Initial States:")
+        info_per_agent = {key: [] for key in agent_keys}
+        info_controls = {key: [] for key in agent_keys}
+        info_agg = []
+        
 
     with torch.no_grad():
         for idx in range(len(time_steps)):
@@ -78,4 +88,24 @@ def euler_maruyama_controlled_sampler(
                     + noise_scale * torch.randn_like(states[key])
                 )
 
-    return aggregator([states[key] for key in agent_keys])
+            if debug:
+                # aggregated snapshot at this step
+                info_agg.append(Y_t.clone().detach().cpu().numpy())
+                # per-agent snapshots
+                for key in agent_keys:
+                    info_per_agent[key].append(states[key].clone().detach().cpu().numpy())
+                # control signals
+                for key in agent_keys:
+                    info_controls[key].append(controls[key].clone().detach().cpu().numpy())
+
+    if debug:
+        for key in agent_keys:
+            assert len(info_per_agent[key]) == len(time_steps)
+        assert len(info_agg) == len(time_steps)
+        return aggregator([states[k] for k in agent_keys]), {
+            "per_agent": info_per_agent,
+            "aggregated": info_agg,
+            "controls": info_controls,
+        }
+    else:
+        return aggregator([states[k] for k in agent_keys])
