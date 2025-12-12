@@ -20,7 +20,7 @@ class MultiAgentControlledSDE(nn.Module):
 
         self.control_agents = nn.ModuleDict({str(k): m for k, m in control_agents.items()})
         self.noise_type = "diagonal"        
-        self.sde_type = "stratonovich" 
+        self.sde_type = "ito" 
         self.active_agent_key = None
 
     def set_active_agent(self, key):
@@ -62,15 +62,11 @@ class MultiAgentControlledSDE(nn.Module):
         controls, scores, x0_hats = {}, {}, {}
         for k in self.agent_keys:
             x = states[k]
-            ctrl_in = torch.cat([x, Y_t], dim=1)            
-            if k == self.active_agent_key:
-                u = self.control_agents[str(k)](ctrl_in, batch_time)
-            else:
-                with torch.no_grad():
-                    u = self.control_agents[str(k)](ctrl_in, batch_time).detach()
-            
+            ctrl_in = torch.cat([x, Y_t], dim=1)
+            # ALWAYS AUTOGRAD HERE DO NOT DETACH!!
+            u = self.control_agents[str(k)](ctrl_in, batch_time)
             s = self.score_model(x, batch_time)
-            u =  self.control_agents[str(k)](ctrl_in, batch_time)
+
             controls[k] = u
             scores[k] = s
             x0_hats[k] = x + (current_std ** 2) * s
@@ -80,14 +76,16 @@ class MultiAgentControlledSDE(nn.Module):
             Y0_hat, self.optimality_target
         )
 
-        if run_vals.numel() == 1: run_vals = run_vals.expand(B)
+        if run_vals.numel() == 1:
+            run_vals = run_vals.expand(B)
         dc_opt = run_vals.view(B, 1)
 
+        # control cost only for the active agent
+        assert self.active_agent_key is not None, "active_agent_key must be set before calling f"
         active_u = controls[self.active_agent_key].view(B, -1)
         dc_ctrl = active_u.pow(2).mean(dim=1, keepdim=True)
 
         drift_states = {k: g_sq * scores[k] + controls[k] for k in self.agent_keys}
-
         return self._pack_state(drift_states, dc_ctrl, dc_opt)
 
     def g(self, t, y):
@@ -143,34 +141,23 @@ def fictitious_train_control_adjoint(
         if not hasattr(control_agents[active_key], '_optimizer'):
             control_agents[active_key]._optimizer = torch.optim.Adam(
                 control_agents[active_key].parameters(), lr=learning_rate)
-            # EMA Setup
-            control_agents[active_key]._ema_params = [
-                p.detach().clone() for p in control_agents[active_key].parameters()
-            ]
 
         optimizer = control_agents[active_key]._optimizer
-        ema_params = control_agents[active_key]._ema_params
 
         # 2. Modes: Train Active, Eval Others
         for k in agent_keys:
             if k == active_key:
                 control_agents[k].train()
+                control_agents[k].requires_grad_(True)
             else:
                 control_agents[k].eval()
+                control_agents[k].requires_grad_(False)
         
         sde_ctrl.set_active_agent(active_key)
 
         loss_acc = 0.
         for _ in range(inner_iters):
 
-            backup = {}
-            for k in agent_keys:
-                if k != active_key and hasattr(control_agents[k], '_ema_params'):
-                    backup[k] = [p.clone() for p in control_agents[k].parameters()]
-                    with torch.no_grad():
-                        for p, ep in zip(control_agents[k].parameters(),
-                                         control_agents[k]._ema_params):
-                            p.copy_(ep)
 
             # 4. Simulation
             # Re-init state (random noise)
@@ -188,9 +175,8 @@ def fictitious_train_control_adjoint(
             # Integration
             ys = torchsde.sdeint_adjoint(
                 sde_ctrl, y0, ts,
-                method="midpoint", 
+                method="srk", 
                 dt=dt,
-                options={'step_size': dt}
             )
 
             y_T = ys[-1]
@@ -214,18 +200,6 @@ def fictitious_train_control_adjoint(
             total_loss.backward()
             torch.nn.utils.clip_grad_norm_(control_agents[active_key].parameters(), 1.0)
             optimizer.step()
-
-            # 6. Update Active Agent's EMA
-            beta = 0.995
-            with torch.no_grad():
-                for p, ep in zip(control_agents[active_key].parameters(), ema_params):
-                    ep.mul_(beta).add_(p, alpha=1. - beta)
-
-            # 7. Restore Opponent Weights (so they can be trained in their turn)
-            for k, vals in backup.items():
-                with torch.no_grad():
-                    for p, v in zip(control_agents[k].parameters(), vals):
-                        p.copy_(v)
 
             loss_acc += total_loss.item()
             
