@@ -3,7 +3,7 @@ from typing import Optional
 
 import torch
 import torch.nn as nn
-
+import torch.nn.functional as F
 
 class OptimalityCriterion(nn.Module, ABC):
     """Abstract interface for computing terminal and running optimality losses."""
@@ -42,11 +42,25 @@ class ClassifierCEOptimalityCriterion(OptimalityCriterion):
         return nn.functional.cross_entropy(logits, target_labels, reduction=self.reduction)
 
     def get_terminal_optimality_loss(
-        self, state: torch.Tensor, target_labels: torch.Tensor
+        self, state: torch.Tensor, target_labels: int | list[int]
     ) -> torch.Tensor:
-        return self._ce_loss(self.classifier(state), target_labels)
+        if len(target_labels) > 1:
+            # allowed subset of labels for terminal optimality, i.e., varying targets (0, 1, 4, ...).
+            raise NotImplementedError("Terminal optimality with multiple target labels is not implemented.")
+        elif len(target_labels) == 1:
+            # fixed target label for terminal optimality. E.g., always target class '1'.    
+            return self._ce_loss(self.classifier(state), target_labels[0])
+        else:
+            raise ValueError("Target labels list is empty.")
 
     def get_running_optimality_loss(
-        self, state: torch.Tensor, target_labels: torch.Tensor
+        self, state: torch.Tensor, target_labels: int | list[int]
     ) -> torch.Tensor:
-        return self._ce_loss(self.classifier(state), target_labels)
+        if len(target_labels) > 1:
+            # allowed subset of labels for running optimality, i.e., varying targets (0, 1, 4, ...).
+            raise NotImplementedError("Running optimality with multiple target labels is not implemented.")
+        elif len(target_labels) == 1:
+            # fixed target label for running optimality. E.g., always target class '1'.
+            return self._ce_loss(self.classifier(state), target_labels[0])
+        else:
+            raise ValueError("Target labels list is empty.")

@@ -55,6 +55,8 @@ def main(cfg: DictConfig) -> None:
         **score_model_cfg
     ).to(device)
     score_model.eval()
+    # Freezes the model’s parameters so they don’t get gradients or updates. 
+    # It does not stop autograd from building a graph or computing gradients with respect to other tensors.
     score_model.requires_grad_(False)
     _load_state(score_model, soc_config.path_to_score_model_checkpoint, device)
 
@@ -135,7 +137,7 @@ def main(cfg: DictConfig) -> None:
                 {
                     "train/loss": loss_value,
                     "train/lr": optimizer.param_groups[0]["lr"],
-                    "train/optimality_target": soc_config.optimality_target,
+                    "train/optimality_target": list(soc_config.optimality_target),
                     "iteration": step + 1,
                 },
                 step=step + 1,
