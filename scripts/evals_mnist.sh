@@ -17,5 +17,5 @@ for m in "${ORDER[@]}"; do
   python -m "$m" \
     --config-path ../configs \
     --config-name "${CONFIGS[$m]}" \
-    exps.soc.optimality_target='[0,1,2,3,4,5,6,7,8,9]'
+    -m exps.soc.optimality_target=0,1,2,3,4,5,6,7,8,9
 done

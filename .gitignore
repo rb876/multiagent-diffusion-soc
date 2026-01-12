@@ -212,6 +212,7 @@ outputs/
 logs/
 wandb/
 checkpoints/
+multirun/
 
 
 # Model files
