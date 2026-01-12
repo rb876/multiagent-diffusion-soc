@@ -23,6 +23,7 @@ class MultiAgentControlledSDE(nn.Module):
         sde,
         agent_keys,
         optimality_target,
+        enable_optimality_loss_on_processes=False,
         image_shape=(1, 28, 28),
     ):
         super().__init__()
@@ -32,6 +33,7 @@ class MultiAgentControlledSDE(nn.Module):
         self.aggregator = aggregator
         self.sde = sde
         self.optimality_target = optimality_target
+        self.enable_optimality_loss_on_processes = enable_optimality_loss_on_processes
 
         # Agent indexing and dimensions
         self.agent_keys = list(agent_keys)
@@ -139,8 +141,8 @@ class MultiAgentControlledSDE(nn.Module):
 
         # Running optimality integrand.
         Y_0_hat = self.aggregator([x0_hats[k] for k in self.agent_keys])
-        running_vals = self.optimality_criterion.get_running_optimality_loss(
-            Y_0_hat, self.optimality_target
+        running_vals = self.optimality_criterion.get_running_state_loss(
+            Y_0_hat, self.optimality_target, processes=[x0_hats[key] for key in self.agent_keys] if self.enable_optimality_loss_on_processes else None
         )
 
         drift_states = {}
@@ -225,6 +227,7 @@ def train_control_adjoint(
     eps,
     lambda_reg,
     running_optimality_reg,
+    enable_optimality_loss_on_processes,
     image_dim=(1, 28, 28),
     debug=False,
 ):
@@ -277,14 +280,15 @@ def train_control_adjoint(
     # y0: [B, D]
     y0 = torch.cat(flats, dim=1)
     sde_ctrl = MultiAgentControlledSDE(
-        score_model=score_model,
-        optimality_criterion=optimality_criterion,
-        control_agents=control_agents,
-        aggregator=aggregator,
-        sde=sde,
         agent_keys=agent_keys,
-        optimality_target=optimality_target,
+        aggregator=aggregator,
+        control_agents=control_agents,
+        enable_optimality_loss_on_processes=enable_optimality_loss_on_processes,
         image_shape=image_dim,
+        optimality_criterion=optimality_criterion,
+        optimality_target=optimality_target,
+        score_model=score_model,
+        sde=sde,
     ).to(device)
 
     # --- forward integration via adjoint ---
@@ -305,8 +309,8 @@ def train_control_adjoint(
     Y_final = aggregator([states_final[k] for k in agent_keys])
     
     # terminal optimality loss
-    optimality_loss = optimality_criterion.get_terminal_optimality_loss(
-        Y_final, optimality_target
+    optimality_loss = optimality_criterion.get_terminal_state_loss(
+        Y_final, optimality_target, processes=[states_final[key] for key in agent_keys] if enable_optimality_loss_on_processes else None
     )
     # --- compute losses ---
     # integrated costs (empirical expectations)

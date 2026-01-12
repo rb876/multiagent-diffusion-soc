@@ -23,10 +23,11 @@ soc:
   sample_num_steps: 500
   target_digit: 0
   train_num_steps: 25
+  enable_optimality_loss_on_processes: true
   aggregator:
     mask_name: split
-    use_overlap: true
-    overlap_size: 4
+    use_overlap: false
+    overlap_size: 0
   debug: true
   optimality_criterion: 
     name: classifier_ce

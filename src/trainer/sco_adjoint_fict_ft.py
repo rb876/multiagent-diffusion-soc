@@ -3,14 +3,24 @@ import torch.nn as nn
 import torchsde
 
 class MultiAgentControlledSDE(nn.Module):
-    def __init__(self, score_model, optimality_criterion, control_agents,
-                 aggregator, sde, agent_keys, optimality_target, image_shape=(1,28,28)):
+    def __init__(self,     
+        score_model,
+        optimality_criterion,
+        control_agents,
+        aggregator,
+        sde,
+        agent_keys,
+        optimality_target,
+        enable_optimality_loss_on_processes,
+        image_shape=(1,28,28),
+        ):
         super().__init__()
         self.score_model = score_model
         self.optimality_criterion = optimality_criterion
         self.aggregator = aggregator
         self.sde = sde
         self.optimality_target = optimality_target
+        self.enable_optimality_loss_on_processes = enable_optimality_loss_on_processes
         self.agent_keys = list(agent_keys)
         self.num_agents = len(self.agent_keys)
 
@@ -72,8 +82,8 @@ class MultiAgentControlledSDE(nn.Module):
             x0_hats[k] = x + (current_std ** 2) * s
 
         Y0_hat = self.aggregator([x0_hats[k] for k in self.agent_keys])
-        run_vals = self.optimality_criterion.get_running_optimality_loss(
-            Y0_hat, self.optimality_target
+        run_vals = self.optimality_criterion.get_running_state_loss(
+            Y0_hat, self.optimality_target, processes=[x0_hats[key] for key in self.agent_keys] if self.enable_optimality_loss_on_processes else None
         )
 
         if run_vals.numel() == 1:
@@ -117,6 +127,7 @@ def fictitious_train_control_adjoint(
     running_optimality_reg,
     learning_rate,
     image_dim,
+    enable_optimality_loss_on_processes,
     debug=False,
 ):
 
@@ -128,9 +139,15 @@ def fictitious_train_control_adjoint(
     dt = (ts[1] - ts[0]).item()
 
     sde_ctrl = MultiAgentControlledSDE(
-        score_model, optimality_criterion, control_agents,
-        aggregator, sde, agent_keys, optimality_target,
-        image_shape=image_dim
+        agent_keys=agent_keys,
+        aggregator=aggregator,
+        control_agents=control_agents,
+        enable_optimality_loss_on_processes=enable_optimality_loss_on_processes,
+        image_shape=image_dim,
+        optimality_criterion=optimality_criterion,
+        optimality_target=optimality_target,
+        score_model=score_model,
+        sde=sde,
     ).to(device)
 
     loss_dict, info_dict = {}, {}
@@ -183,8 +200,10 @@ def fictitious_train_control_adjoint(
             states_f, c_ctrl_f, c_opt_f = sde_ctrl._unpack_state(y_T)
             Y_final = aggregator([states_f[k] for k in agent_keys])
 
-            term_loss = optimality_criterion.get_terminal_optimality_loss(
-                Y_final, optimality_target)
+            term_loss = optimality_criterion.get_terminal_state_loss(
+                Y_final, optimality_target,
+                processes=[states_f[k] for k in agent_keys] if enable_optimality_loss_on_processes else None
+                )
 
             ctrl_loss = c_ctrl_f.mean() 
             run_loss = c_opt_f.mean()
