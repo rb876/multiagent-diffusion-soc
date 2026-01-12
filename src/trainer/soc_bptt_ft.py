@@ -151,21 +151,22 @@ def train_control_bptt(
 
 
 def fictitious_train_control_bptt(
-    score_model,
-    optimality_criterion,
-    control_agents,
     aggregator,
-    sde,
-    optimality_target,
-    num_steps,
-    inner_iters,
     batch_size,
+    control_agents,
     device,
+    enable_optimality_loss_on_processes,
     eps,
-    lambda_reg,
-    running_optimality_reg,
-    learning_rate,
     image_dim,
+    inner_iters,
+    lambda_reg,
+    learning_rate,
+    num_steps,
+    optimality_criterion,
+    optimality_target,
+    running_optimality_reg,
+    score_model,
+    sde,
     debug=False,
 ):
     """Fictitious-play style training of an arbitrary number of control policies."""
@@ -263,8 +264,8 @@ def fictitious_train_control_bptt(
 
                 # Running optimality cost ∫c(Ŷ_0(t),t) dt
                 # Compute running optimality loss.
-                cumulative_optimality_loss += optimality_criterion.get_running_optimality_loss(
-                    Y_0_hat, optimality_target) * step_size
+                cumulative_optimality_loss += optimality_criterion.get_running_state_loss(
+                    Y_0_hat, optimality_target, processes=[x0_hats[key] for key in agent_keys] if enable_optimality_loss_on_processes else None) * step_size
             
             # Progress system dynamics for all agents (Euler–Maruyama)
             noise_scale = torch.sqrt(step_size) * g_noise
@@ -281,7 +282,11 @@ def fictitious_train_control_bptt(
         
         # --- Terminal cost on Y_1 ---
         Y_final = aggregator([agent_states[key] for key in agent_keys])
-        optimality_loss = optimality_criterion.get_terminal_optimality_loss(Y_final, optimality_target)
+        optimality_loss = optimality_criterion.get_terminal_state_loss(
+            Y_final,
+            optimality_target, 
+            processes=[agent_states[key] for key in agent_keys] if enable_optimality_loss_on_processes else None
+            )
 
         # Compute overall SOC loss to backpropagate.
         total_loss = (

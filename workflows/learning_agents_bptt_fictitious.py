@@ -68,10 +68,6 @@ def main(cfg: DictConfig) -> None:
     ).to(device)
     classifier.eval()
     _load_state(classifier, soc_config.path_to_classifier_checkpoint, device)
-    optimality_criterion = get_optimality_criterion(
-        name=soc_config.optimality_criterion.name, 
-        classifier=classifier
-    ).to(device)
 
     # Initialize control nets
     control_cfg = OmegaConf.to_container(cfg.exps.control_net_model, resolve=True)
@@ -92,6 +88,12 @@ def main(cfg: DictConfig) -> None:
         **aggregator_cfg
     )
 
+    optimality_criterion = get_optimality_criterion(
+        name=soc_config.optimality_criterion.name, 
+        classifier=classifier, 
+        mask=aggregator.mask,
+    ).to(device)
+
     # Select training method
     if soc_config.method == "bptt":
         train_soc_fn = fictitious_train_control_bptt
@@ -106,22 +108,23 @@ def main(cfg: DictConfig) -> None:
         # NOTE: we intialise the optmizer inside the training function to reset it every iteration.
         # We could also pass in the optimizer state if we wanted to keep it across iterations.
         loss_dict, info = train_soc_fn(
-            score_model=score_model,
-            optimality_criterion=optimality_criterion,
-            control_agents=control_agents,
             aggregator=aggregator,
-            sde=sde,
-            optimality_target=soc_config.target_digit,
-            num_steps=soc_config.train_num_steps,
             batch_size=soc_config.batch_size,
-            device=device,
-            eps=soc_config.eps,
-            lambda_reg=soc_config.lambda_reg,
-            inner_iters=soc_config.inner_iters,
-            running_optimality_reg=soc_config.running_optimality_reg,
-            learning_rate=soc_config.learning_rate,
-            image_dim=tuple(cfg.exps.data.loader.img_size),
+            control_agents=control_agents,
             debug=soc_config.debug,
+            device=device,
+            enable_optimality_loss_on_processes=soc_config.enable_optimality_loss_on_processes,
+            eps=soc_config.eps,
+            image_dim=tuple(cfg.exps.data.loader.img_size),
+            inner_iters=soc_config.inner_iters,
+            lambda_reg=soc_config.lambda_reg,
+            learning_rate=soc_config.learning_rate,
+            num_steps=soc_config.train_num_steps,
+            optimality_criterion=optimality_criterion,
+            optimality_target=soc_config.target_digit,
+            running_optimality_reg=soc_config.running_optimality_reg,
+            score_model=score_model,
+            sde=sde,
         )
 
         if isinstance(loss_dict, dict):
