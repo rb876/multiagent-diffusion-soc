@@ -69,11 +69,6 @@ def main(cfg: DictConfig) -> None:
     ).to(device)
     classifier.eval()
     _load_state(classifier, soc_config.path_to_classifier_checkpoint, device)
-    # Initialize optimality criterion based on the classifier.
-    optimality_criterion = get_optimality_criterion(
-        name=soc_config.optimality_criterion.name, 
-        classifier=classifier
-    ).to(device)
 
     # Initialize control nets
     control_cfg = OmegaConf.to_container(cfg.exps.control_net_model, resolve=True)
@@ -100,6 +95,12 @@ def main(cfg: DictConfig) -> None:
         device=device,
         **aggregator_cfg
     )
+    # Initialize optimality criterion based on the classifier.
+    optimality_criterion = get_optimality_criterion(
+        name=soc_config.optimality_criterion.name, 
+        classifier=classifier,
+        mask=aggregator.mask,
+    ).to(device)
 
     # Select training method
     if soc_config.method == "bptt":
@@ -113,21 +114,22 @@ def main(cfg: DictConfig) -> None:
     pbar = tqdm(range(soc_config.iters), desc="Training control policy")
     for step in pbar:
         loss, info = train_soc_fn(
-            batch_size=soc_config.batch_size,
-            optimality_criterion=optimality_criterion,
-            control_agents=control_agents,
             aggregator=aggregator,
-            sde=sde,
+            batch_size=soc_config.batch_size,
+            control_agents=control_agents,
+            debug=soc_config.debug,
             device=device,
+            enable_optimality_loss_on_processes=soc_config.enable_optimality_loss_on_processes,
             eps=soc_config.eps,
+            image_dim=tuple(cfg.exps.data.loader.img_size),
             lambda_reg=soc_config.lambda_reg,
             num_steps=soc_config.train_num_steps,
+            optimality_criterion=optimality_criterion,
+            optimality_target=soc_config.optimality_target,
             optimizer=optimizer,
             running_optimality_reg=soc_config.running_optimality_reg,
             score_model=score_model,
-            optimality_target=soc_config.optimality_target,
-            image_dim=tuple(cfg.exps.data.loader.img_size),
-            debug=soc_config.debug,
+            sde=sde,
         )
         loss_value = float(loss)
         pbar.set_postfix(loss=f"{loss_value:.4f}")
@@ -137,7 +139,7 @@ def main(cfg: DictConfig) -> None:
                 {
                     "train/loss": loss_value,
                     "train/lr": optimizer.param_groups[0]["lr"],
-                    "train/optimality_target": list(soc_config.optimality_target),
+                    "train/optimality_target": soc_config.optimality_target,
                     "iteration": step + 1,
                 },
                 step=step + 1,

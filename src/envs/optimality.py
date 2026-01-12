@@ -1,66 +1,62 @@
 from abc import ABC, abstractmethod
 from typing import Optional
+from typing import Optional, Sequence
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from src.envs.seam_continuity_loss import SeamContinuityLoss
+
+
 class OptimalityCriterion(nn.Module, ABC):
     """Abstract interface for computing terminal and running optimality losses."""
 
     @abstractmethod
-    def get_terminal_optimality_loss(
+    def get_terminal_state_loss(
         self, state: torch.Tensor, target_labels: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
         """Loss evaluated at the terminal state."""
         raise NotImplementedError
 
     @abstractmethod
-    def get_running_optimality_loss(
+    def get_running_state_loss(
         self, state: torch.Tensor, target_labels: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
         """Loss accumulated along the trajectory."""
         raise NotImplementedError
 
 
-class ClassifierCEOptimalityCriterion(OptimalityCriterion):
-    """Optimality defined by classifier cross-entropy."""
-
-    def __init__(self, classifier: nn.Module, reduction: str = "mean") -> None:
+class ClassifierCEWithAlignmentOrCooperation(nn.Module):
+    """
+    CE loss on aggregated Y + seam term.
+    - If processes is None: seam term aligns Y (stitching smoothness)
+    - If processes provided: seam term couples agents explicitly
+    """
+    def __init__(self, classifier: nn.Module, seam_loss: SeamContinuityLoss, reduction: str = "mean") -> None:
         super().__init__()
         self.classifier = classifier
+        self.seam_loss = seam_loss
         self.reduction = reduction
 
-    def _ce_loss(self, logits: torch.Tensor, target_labels: torch.Tensor) -> torch.Tensor:
-        batch_size = logits.shape[0]
-        target_labels = torch.full(
-            (batch_size,), 
-            target_labels, 
-            device=logits.device, 
-            dtype=torch.long
-        )
-        return nn.functional.cross_entropy(logits, target_labels, reduction=self.reduction)
+    def _ce(self, y: torch.Tensor, target_label: int) -> torch.Tensor:
+        logits = self.classifier(y)
+        B = logits.shape[0]
+        target = torch.full((B,), int(target_label), device=logits.device, dtype=torch.long)
+        return F.cross_entropy(logits, target, reduction=self.reduction)
 
-    def get_terminal_optimality_loss(
-        self, state: torch.Tensor, target_labels: int | list[int]
+    def loss(self, y: torch.Tensor, target_labels: list[int], processes: Optional[Sequence[torch.Tensor]] = None) -> torch.Tensor:
+        return self._ce(y, target_labels) + self.seam_loss(y, processes=processes)
+    
+    def get_terminal_state_loss(
+        self, state: torch.Tensor, target_labels: torch.Tensor, processes: Optional[Sequence[torch.Tensor]] = None
     ) -> torch.Tensor:
-        if len(target_labels) > 1:
-            # allowed subset of labels for terminal optimality, i.e., varying targets (0, 1, 4, ...).
-            raise NotImplementedError("Terminal optimality with multiple target labels is not implemented.")
-        elif len(target_labels) == 1:
-            # fixed target label for terminal optimality. E.g., always target class '1'.    
-            return self._ce_loss(self.classifier(state), target_labels[0])
-        else:
-            raise ValueError("Target labels list is empty.")
-
-    def get_running_optimality_loss(
-        self, state: torch.Tensor, target_labels: int | list[int]
+        if target_labels is None:
+            raise ValueError("target_labels must be provided for terminal state loss.")
+        return self.loss(state, target_labels, processes=processes) 
+    
+    def get_running_state_loss(
+        self, state: torch.Tensor, target_labels: torch.Tensor, processes: Optional[Sequence[torch.Tensor]] = None
     ) -> torch.Tensor:
-        if len(target_labels) > 1:
-            # allowed subset of labels for running optimality, i.e., varying targets (0, 1, 4, ...).
-            raise NotImplementedError("Running optimality with multiple target labels is not implemented.")
-        elif len(target_labels) == 1:
-            # fixed target label for running optimality. E.g., always target class '1'.
-            return self._ce_loss(self.classifier(state), target_labels[0])
-        else:
-            raise ValueError("Target labels list is empty.")
+        # Running loss only includes seam continuity term.
+        return self.loss(state, target_labels, processes=processes)

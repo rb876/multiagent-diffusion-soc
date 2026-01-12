@@ -9,20 +9,12 @@ def create_split_process_masks(
     overlap_size: int = 4,
     use_overlap: bool = True,
 ) -> torch.Tensor:
-    """
-    Split along height into `num_processes` contiguous bands, with optional overlap.
-    Returns masks of shape (num_processes, C, H, W).
-
-    - Without overlap: each pixel belongs to exactly one process.
-    - With overlap: neighboring bands overlap by `overlap_size` (split across both sides).
-    """
     C, H, W = img_dims
-
     masks = torch.zeros((num_processes, C, H, W), device=device)
+
     if num_processes < 1:
         raise ValueError("num_processes must be >= 1")
 
-    # --- non-overlapping base segments ---
     base = H // num_processes
     rem = H % num_processes
 
@@ -31,21 +23,17 @@ def create_split_process_masks(
     for i in range(num_processes):
         sz = base + (1 if i < rem else 0)
         start = cur
-        end = cur + sz  # exclusive
+        end = cur + sz
         segments.append((start, end))
         cur = end
 
-    # --- apply optional overlap ---
     if use_overlap and overlap_size > 0 and num_processes > 1:
         half_ov = overlap_size // 2
         for p, (s, e) in enumerate(segments):
-            # expand upward (towards smaller h) except for first
             s_ov = s if p == 0 else max(0, s - half_ov)
-            # expand downward (towards larger h) except for last
             e_ov = e if p == num_processes - 1 else min(H, e + half_ov)
             masks[p, :, s_ov:e_ov, :] = 1.0
     else:
-        # no overlap: just fill base segments
         for p, (s, e) in enumerate(segments):
             masks[p, :, s:e, :] = 1.0
 
@@ -55,14 +43,22 @@ def create_split_process_masks(
 class ImageMaskAggregator:
     def __init__(
         self,
-        img_dims: tuple[int, int, int],  # (channels, height, width)
-        mask_name: str,                  # "split" or "random"
+        img_dims: tuple[int, int, int],
+        mask_name: str,
         num_processes: int,
         device: torch.device = torch.device("cuda"),
         overlap_size: int = 4,
         use_overlap: bool = True,
+        eps: float = 1e-6,
     ):
-    
+        self.device = device
+        self.img_dims = img_dims
+        self.mask_name = mask_name
+        self.num_processes = num_processes
+        self.overlap_size = overlap_size
+        self.use_overlap = use_overlap
+        self.eps = eps
+
         def _build_masks() -> torch.Tensor:
             if self.mask_name == "split":
                 return create_split_process_masks(
@@ -73,35 +69,29 @@ class ImageMaskAggregator:
                     use_overlap=self.use_overlap,
                 )  # (P, C, H, W)
             elif self.mask_name == "average":
-                mask = torch.ones((self.num_processes, *self.img_dims), device=self.device) / self.num_processes
-                return mask  # (P, C, H, W)
+                return torch.ones((self.num_processes, *self.img_dims), device=self.device) / self.num_processes
             elif self.mask_name == "random":
-                pass
+                raise NotImplementedError("random masks not implemented.")
             else:
                 raise ValueError(f"Unknown mask name: {self.mask_name}")
-    
-        self.device = device
-        self.img_dims = img_dims
-        self.mask_name = mask_name
-        self.num_processes = num_processes
-        self.overlap_size = overlap_size
-        self.use_overlap = use_overlap
-        self.mask = _build_masks().to(device)
 
+        self.mask = _build_masks().to(device)
 
     def __call__(self, processes: Sequence[torch.Tensor]) -> torch.Tensor:
         """
-        processes: sequence of tensors, each (B, C, H, W),
-                   all same shape.
-        Returns:
-            mixed: (B, C, H, W)
-            where each pixel is taken from exactly one process
-            according to the masks.
-        """
+        processes: sequence length P, each (B, C, H, W)
+        Returns: mixed (B, C, H, W)
 
+        If masks overlap, pixels are normalized by sum of mask weights to avoid brightening.
+        """
         if len(processes) == 0:
             raise ValueError("`processes` must be non-empty.")
-    
-        stacked = torch.stack(processes, dim=0)  # (P, B, C, H, W)
-        masks = self.mask.unsqueeze(1)  # (P, 1, C, H, W)
-        return (stacked * masks).sum(dim=0)  # (B, C, H, W)
+
+        stacked = torch.stack(processes, dim=0)          # (P, B, C, H, W)
+        masks = self.mask.unsqueeze(1)                   # (P, 1, C, H, W)
+
+        weighted = (stacked * masks).sum(dim=0)          # (B, C, H, W)
+        denom = masks.sum(dim=0)                         # (1, C, H, W)
+        denom = denom.clamp_min(self.eps)                # avoid divide by 0
+
+        return weighted / denom

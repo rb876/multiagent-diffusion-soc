@@ -5,20 +5,21 @@ from src.trainer.utils import compute_grad_norms
 
 
 def train_control_bptt(
-    score_model,
-    optimality_criterion,
-    control_agents,
     aggregator,
-    sde,
-    optimizer,
-    optimality_target,
-    num_steps,
     batch_size,
+    control_agents,
     device,
+    enable_optimality_loss_on_processes,
     eps,
+    image_dim,
     lambda_reg,
+    num_steps,
+    optimality_criterion,
+    optimality_target,
+    optimizer,
     running_optimality_reg,
-    image_dim, 
+    score_model,
+    sde,
     debug=False,
 ):
 
@@ -102,8 +103,8 @@ def train_control_bptt(
             # Aggregate the denoised estimates across agents for running optimality loss.
             Y_0_hat = aggregator([x0_hats[key] for key in agent_keys])
             # Compute running optimality loss.
-            cumulative_optimality_loss += optimality_criterion.get_running_optimality_loss(
-                Y_0_hat, optimality_target) * step_size
+            cumulative_optimality_loss += optimality_criterion.get_running_state_loss(
+                Y_0_hat, optimality_target, processes=[x0_hats[key] for key in agent_keys] if enable_optimality_loss_on_processes else None) * step_size
     
         # Progress system dynamics for all agents (Euler–Maruyama)
         noise_scale = torch.sqrt(step_size) * g_noise
@@ -119,7 +120,10 @@ def train_control_bptt(
     # --- Terminal cost on Y_1 ---
     Y_final = aggregator([system_states[key] for key in agent_keys])
     # Compute terminal optimality loss.
-    optimality_loss = optimality_criterion.get_terminal_optimality_loss(Y_final, optimality_target)
+    optimality_loss = optimality_criterion.get_terminal_state_loss(
+        Y_final,
+        optimality_target,
+        processes=[system_states[key] for key in agent_keys] if enable_optimality_loss_on_processes else None)
     # Compute overall SOC loss to backpropagate.
     total_loss = (
         lambda_reg * cumulative_control_loss
