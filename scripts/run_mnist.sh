@@ -49,5 +49,6 @@ for m in "${ORDER[@]}"; do
     --config-name "${CONFIGS[$m]}" \
     -m \
     exps.soc.optimality_target="${OPT_TARGET}" \
-    exps.soc.batch_size="${BATCH_SIZE}"
+    exps.soc.batch_size="${BATCH_SIZE}" \
+    exps.soc.num_control_agents="${AGENTS}"
 done
