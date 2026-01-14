@@ -43,7 +43,7 @@ def main(cfg: DictConfig) -> None:
 
             wandb_module = wandb_lib
             wandb_kwargs = {k: v for k, v in wandb_dict.items() if v not in (None, "", [], {})}
-            wandb_run = wandb_module.init(**wandb_kwargs)
+            wandb_run = wandb_module.init(**wandb_kwargs, reinit=True)
             wandb_run.config.update(OmegaConf.to_container(cfg, resolve=True), allow_val_change=True)
 
     # Load score model, classifier, and control nets
@@ -121,7 +121,7 @@ def main(cfg: DictConfig) -> None:
             learning_rate=soc_config.learning_rate,
             num_steps=soc_config.train_num_steps,
             optimality_criterion=optimality_criterion,
-            optimality_target=soc_config.target_digit,
+            optimality_target=soc_config.optimality_target,
             running_optimality_reg=soc_config.running_optimality_reg,
             score_model=score_model,
             sde=sde,
@@ -145,7 +145,7 @@ def main(cfg: DictConfig) -> None:
         if wandb_run is not None:
             log_payload = {
                 "train/total_loss": total_val,
-                "train/target_digit": soc_config.target_digit,
+                "train/optimality_target": soc_config.optimality_target,
                 "iteration": step + 1,
             }
             if soc_config.get("debug", False) and info:
