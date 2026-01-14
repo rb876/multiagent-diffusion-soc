@@ -11,13 +11,13 @@ soc:
   eps: 1e-3
   eval_every: 100
   iters: 1000
-  lambda_reg: 0.01
+  lambda_reg: 1.0
   learning_rate: 1e-4
   num_control_agents: 2
   num_diffusion_steps: 500
   path_to_classifier_checkpoint: /home/rbarbano/home/git/multi-agent-diffusion-working-repo/cnet.pt
   path_to_score_model_checkpoint: /home/rbarbano/home/git/multi-agent-diffusion-working-repo/checkpoints/latest.ckpt
-  running_optimality_reg: 1
+  running_optimality_reg: 1.0
   sample_batch_size: 64
   optimality_target: 0
   train_num_steps: 25
@@ -29,7 +29,7 @@ soc:
     overlap_size: 0
   debug: true
   optimality_criterion: 
-    name: classifier_ce
+    name: classifier_ce_with_alignment_or_cooperation
 
 sde:
   name: VE

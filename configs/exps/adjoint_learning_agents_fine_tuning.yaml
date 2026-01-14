@@ -29,7 +29,7 @@ soc:
     overlap_size: 0
   debug: true
   optimality_criterion: 
-    name: classifier_ce
+    name: classifier_ce_with_alignment_or_cooperation
 
 sde:
   name: VE

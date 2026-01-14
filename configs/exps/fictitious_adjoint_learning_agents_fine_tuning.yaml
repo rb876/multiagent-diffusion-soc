@@ -21,7 +21,7 @@ soc:
   running_optimality_reg: 10.0
   sample_batch_size: 64
   sample_num_steps: 500
-  target_digit: 0
+  optimality_target: 0
   train_num_steps: 25
   enable_optimality_loss_on_processes: true
   aggregator:
@@ -30,7 +30,7 @@ soc:
     overlap_size: 0
   debug: true
   optimality_criterion: 
-    name: classifier_ce
+    name: classifier_ce_with_alignment_or_cooperation
 
 sde:
   name: VE
