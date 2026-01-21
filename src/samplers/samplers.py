@@ -1,4 +1,43 @@
+from pathlib import Path
+from datetime import datetime
+from copy import deepcopy
+
+from hydra.core.hydra_config import HydraConfig
+import numpy as np
 import torch
+
+
+def _save_debug_states(info_agg, info_per_agent, agent_keys, debug_dir=None, save_last_only=True):
+    """Persist aggregated and per-agent states for offline inspection."""
+
+    if save_last_only:
+        print("Saving only the last time step of debug states.")
+    
+    if debug_dir:
+        save_root = Path(debug_dir)
+    else:
+        try:
+            # keep all debug artifacts under the Hydra run directory
+            save_root = Path(HydraConfig.get().run.dir) / "debug_states"
+        except Exception:
+            save_root = Path("debug_states")
+
+    save_dir = save_root / datetime.now().strftime("%Y%m%d-%H%M%S")
+    save_dir.mkdir(parents=True, exist_ok=True)
+
+    if save_last_only:
+        info_agg_to_save = [deepcopy(info_agg[-1])]
+        info_per_agent_to_save = {key: [deepcopy(info_per_agent[key][-1])] for key in agent_keys}
+    else:
+        info_agg_to_save = info_agg
+        info_per_agent_to_save = info_per_agent
+
+    np.savez_compressed(save_dir / "aggregated.npz", data=np.stack(info_agg_to_save, axis=0))
+    for key in agent_keys:
+        np.savez_compressed(save_dir / f"{key}_states.npz", data=np.stack(info_per_agent_to_save[key], axis=0))
+
+    return save_dir
+
 
 def euler_maruyama_sampler(
   score_model,
@@ -40,6 +79,7 @@ def euler_maruyama_controlled_sampler(
     device="cuda",
     eps=1e-3,
     debug: bool = False,
+    debug_dir=None,
 ):
     
     agent_keys = sorted(control_agents.keys())
@@ -102,10 +142,16 @@ def euler_maruyama_controlled_sampler(
         for key in agent_keys:
             assert len(info_per_agent[key]) == len(time_steps)
         assert len(info_agg) == len(time_steps)
-        return aggregator([states[k] for k in agent_keys]), {
+        final_agg = aggregator([states[k] for k in agent_keys])
+
+        # save debug states as numpy arrays for further analysis as well as the aggregated state
+        save_dir = _save_debug_states(info_agg, info_per_agent, agent_keys, debug_dir)
+
+        return final_agg, {
             "per_agent": info_per_agent,
             "aggregated": info_agg,
             "controls": info_controls,
+            "save_dir": str(save_dir),
         }
     else:
         return aggregator([states[k] for k in agent_keys])

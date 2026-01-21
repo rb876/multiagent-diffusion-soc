@@ -1,5 +1,7 @@
 import os
+from pathlib import Path
 
+import torch
 from src.samplers.samplers import euler_maruyama_controlled_sampler
 from hydra.core.hydra_config import HydraConfig
 
@@ -105,3 +107,24 @@ def generate_and_plot_samples(
 
     samples = samples.clamp(0.0, 1.0)
     return samples
+
+
+def save_control_agents(control_agents, control_agent_save_path, hydra_run_dir: Path | None = None):
+    """Persist control agent weights relative to the Hydra run directory."""
+    base_path = Path(control_agent_save_path)
+    if hydra_run_dir is None:
+        try:
+            hydra_run_dir = Path(HydraConfig.get().run.dir)
+        except Exception:
+            hydra_run_dir = Path(".")
+
+    target_root = base_path if base_path.is_absolute() else hydra_run_dir / base_path
+    for key, agent in control_agents.items():
+        if target_root.suffix:
+            target_root.parent.mkdir(parents=True, exist_ok=True)
+            save_path = target_root.with_stem(f"{target_root.stem}_agent_{key}")
+        else:
+            target_root.mkdir(parents=True, exist_ok=True)
+            save_path = target_root / f"agent_{key}.pt"
+
+        torch.save(agent.state_dict(), save_path)

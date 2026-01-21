@@ -30,6 +30,7 @@ soc:
   debug: true
   optimality_criterion: 
     name: classifier_ce_with_alignment_or_cooperation
+  control_agent_save_path: weights
 
 sde:
   name: VE
