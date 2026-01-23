@@ -95,6 +95,7 @@ def generate_and_plot_samples(
         eps=eps,
         debug=debug,
     )
+
     if debug:
         samples, info = samples  # type: ignore
         out_dir = HydraConfig.get().runtime.output_dir
@@ -104,8 +105,11 @@ def generate_and_plot_samples(
             save_path_prefix=os.path.join(out_dir, "samples_debug_plots_{step}".format(step=step)),
             stride=25,
         )
+        samples = samples.clamp(0.0, 1.0)
+    else: 
+        samples, _ = samples
+        samples = samples.clamp(0.0, 1.0)
 
-    samples = samples.clamp(0.0, 1.0)
     return samples
 
 
