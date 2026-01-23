@@ -202,7 +202,7 @@ def fictitious_train_control_adjoint(
 
             term_loss = optimality_criterion.get_terminal_state_loss(
                 Y_final, optimality_target,
-                processes=[states_f[k] for k in agent_keys] if enable_optimality_loss_on_processes else None
+                processes=None,
                 )
 
             ctrl_loss = c_ctrl_f.mean() 

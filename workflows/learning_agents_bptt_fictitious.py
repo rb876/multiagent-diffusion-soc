@@ -16,7 +16,7 @@ from src.envs.registry import get_optimality_criterion
 from src.models.registry import get_model_by_name
 from src.samplers.diff_dyms import SDE
 from src.trainer.soc_bptt_ft import fictitious_train_control_bptt
-from src.trainer.sco_adjoint_fict_ft import fictitious_train_control_adjoint
+from src.trainer.soc_adjoint_fict_ft import fictitious_train_control_adjoint
 from src.utils import generate_and_plot_samples, save_control_agents
 
 

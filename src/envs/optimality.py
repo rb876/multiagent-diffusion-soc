@@ -6,7 +6,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from src.envs.seam_continuity_loss import SeamContinuityLoss
+# from src.envs.seam_continuity_loss import SeamContinuityLoss
+from src.envs.seam_continuity_loss_v2 import SeamContinuityLossV2 as SeamContinuityLoss
 
 
 class OptimalityCriterion(nn.Module, ABC):
