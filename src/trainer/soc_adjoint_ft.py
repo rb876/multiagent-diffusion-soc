@@ -310,7 +310,7 @@ def train_control_adjoint(
     
     # terminal optimality loss
     optimality_loss = optimality_criterion.get_terminal_state_loss(
-        Y_final, optimality_target, processes=None,
+        Y_final, optimality_target
     )
     # --- compute losses ---
     # integrated costs (empirical expectations)

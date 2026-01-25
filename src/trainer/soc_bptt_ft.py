@@ -123,7 +123,7 @@ def train_control_bptt(
     optimality_loss = optimality_criterion.get_terminal_state_loss(
         Y_final,
         optimality_target,
-        processes=None)
+    )
     # Compute overall SOC loss to backpropagate.
     total_loss = (
         lambda_reg * cumulative_control_loss
@@ -285,9 +285,8 @@ def fictitious_train_control_bptt(
         optimality_loss = optimality_criterion.get_terminal_state_loss(
             Y_final,
             optimality_target, 
-            processes=[agent_states[key] for key in agent_keys] if enable_optimality_loss_on_processes else None
-            )
-
+        )
+        
         # Compute overall SOC loss to backpropagate.
         total_loss = (
             lambda_reg * cumulative_control_loss

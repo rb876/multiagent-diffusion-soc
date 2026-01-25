@@ -93,7 +93,7 @@ def main(cfg: DictConfig) -> None:
     optimality_criterion = get_optimality_criterion(
         name=soc_config.optimality_criterion.name, 
         classifier=classifier, 
-        mask=aggregator.mask,
+        aggregator=aggregator,
     ).to(device)
 
     # Select training method

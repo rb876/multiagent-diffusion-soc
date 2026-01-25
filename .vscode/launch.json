@@ -91,6 +91,22 @@
                 "exps/fictitious_adjoint_learning_agents_fine_tuning"
             ]
 
+        },
+        {
+            "name": "Python Debugger: Display Aggregator",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "viz._aggregator",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Python Debugger: Display Seam Continuity Loss",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "viz._seam_cont_loss",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal"
         }
     ]
 }

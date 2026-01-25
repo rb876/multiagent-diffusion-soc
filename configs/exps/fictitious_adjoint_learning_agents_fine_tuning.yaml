@@ -16,8 +16,8 @@ soc:
   num_control_agents: 2
   num_diffusion_steps: 500
   outer_iters: 1000
-  path_to_classifier_checkpoint: /home/rbarbano/home/git/multi-agent-diffusion-working-repo/cnet.pt
-  path_to_score_model_checkpoint: /home/rbarbano/home/git/multi-agent-diffusion-working-repo/checkpoints/latest.ckpt
+  path_to_classifier_checkpoint: checkpoints/cnet.pt
+  path_to_score_model_checkpoint: checkpoints/latest.ckpt
   running_optimality_reg: 10.0
   sample_batch_size: 64
   sample_num_steps: 500
@@ -30,7 +30,7 @@ soc:
     overlap_size: 0
   debug: true
   optimality_criterion: 
-    name: classifier_ce_with_alignment_or_cooperation
+    name: classifier_ce_with_cooperation
   control_agent_save_path: weights
 
 sde:
