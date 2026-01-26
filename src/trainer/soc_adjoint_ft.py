@@ -226,7 +226,7 @@ def train_control_adjoint(
     device,
     eps,
     lambda_reg,
-    running_optimality_reg,
+    running_state_cost_scaling,
     enable_optimality_loss_on_processes,
     image_dim=(1, 28, 28),
     debug=False,
@@ -319,7 +319,7 @@ def train_control_adjoint(
     # final SOC objective
     total_loss = (
         lambda_reg * control_cost
-        + running_optimality_reg * running_opt_cost
+        + running_state_cost_scaling * running_opt_cost
         + optimality_loss
     )
     # --- backward & update ---
@@ -336,7 +336,7 @@ def train_control_adjoint(
     info = {}
     if debug:
         info["cumulative_control_loss"] = (lambda_reg * control_cost).item()
-        info["cumulative_optimality_loss"] = (running_optimality_reg * running_opt_cost).item()
+        info["cumulative_optimality_loss"] = (running_state_cost_scaling * running_opt_cost).item()
         info["optimality_loss"] = optimality_loss.item()
         info["grad_norms"] = {}
         for k in agent_keys:

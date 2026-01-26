@@ -17,7 +17,7 @@ def train_control_bptt(
     optimality_criterion,
     optimality_target,
     optimizer,
-    running_optimality_reg,
+    running_state_cost_scaling,
     score_model,
     sde,
     debug=False,
@@ -94,7 +94,7 @@ def train_control_bptt(
             scores[key] = score_model(system_states[key], batch_time_step)
 
         # --- Running Optimality Cost ---
-        if running_optimality_reg > 0:
+        if running_state_cost_scaling > 0:
             # Compute denoised estimates for all agents (TWEEDY ESTIMATOR).
             current_std = sde.marginal_prob_std(batch_time_step)[:, None, None, None]
             for key in agent_keys:
@@ -128,7 +128,7 @@ def train_control_bptt(
     total_loss = (
         lambda_reg * cumulative_control_loss
         + optimality_loss
-        + running_optimality_reg * cumulative_optimality_loss
+        + running_state_cost_scaling * cumulative_optimality_loss
     )
     # --- Backprop & update ---
     total_loss.backward()
@@ -164,7 +164,7 @@ def fictitious_train_control_bptt(
     num_steps,
     optimality_criterion,
     optimality_target,
-    running_optimality_reg,
+    running_state_cost_scaling,
     score_model,
     sde,
     debug=False,
@@ -250,7 +250,7 @@ def fictitious_train_control_bptt(
             for key in agent_keys:
                 scores[key] = score_model(agent_states[key], batch_time_step)
 
-            if running_optimality_reg > 0:
+            if running_state_cost_scaling > 0:
                 current_std = sde.marginal_prob_std(batch_time_step)[:, None, None, None]
                 # Compute denoised estimates for all agents (TWEEDY ESTIMATOR).
                 x0_hats = {
@@ -291,7 +291,7 @@ def fictitious_train_control_bptt(
         total_loss = (
             lambda_reg * cumulative_control_loss
             + optimality_loss
-            + running_optimality_reg * cumulative_optimality_loss
+            + running_state_cost_scaling * cumulative_optimality_loss
         )
         # --- Backprop & update ---
         total_loss.backward()

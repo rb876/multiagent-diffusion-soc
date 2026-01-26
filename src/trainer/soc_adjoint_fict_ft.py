@@ -124,7 +124,7 @@ def fictitious_train_control_adjoint(
     eps,
     lambda_reg,
     inner_iters,
-    running_optimality_reg,
+    running_state_cost_scaling,
     learning_rate,
     image_dim,
     enable_optimality_loss_on_processes,
@@ -210,7 +210,7 @@ def fictitious_train_control_adjoint(
 
             total_loss = (
                 lambda_reg * ctrl_loss +
-                running_optimality_reg * run_loss +
+                running_state_cost_scaling * run_loss +
                 term_loss
             )
 
