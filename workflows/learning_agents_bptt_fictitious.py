@@ -103,7 +103,6 @@ def main(cfg: DictConfig) -> None:
         train_soc_fn = fictitious_train_control_adjoint
     else:
         raise ValueError(f"Unknown training method: {soc_config.method}")
-
     from tqdm.auto import tqdm
     pbar = tqdm(range(soc_config.outer_iters), desc="Training control policy")
     for step in pbar:
@@ -124,7 +123,7 @@ def main(cfg: DictConfig) -> None:
             num_steps=soc_config.train_num_steps,
             optimality_criterion=optimality_criterion,
             optimality_target=soc_config.optimality_target,
-            running_optimality_reg=soc_config.running_optimality_reg,
+            running_state_cost_scaling=soc_config.running_state_cost_scaling,
             score_model=score_model,
             sde=sde,
         )

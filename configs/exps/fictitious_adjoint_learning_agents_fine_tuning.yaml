@@ -18,7 +18,7 @@ soc:
   outer_iters: 1000
   path_to_classifier_checkpoint: checkpoints/cnet.pt
   path_to_score_model_checkpoint: checkpoints/latest.ckpt
-  running_optimality_reg: 10.0
+  running_state_cost_scaling: 10.0
   sample_batch_size: 64
   sample_num_steps: 500
   optimality_target: 0
