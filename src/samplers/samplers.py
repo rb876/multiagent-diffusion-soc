@@ -17,8 +17,8 @@ def _save_debug_states(info_agg, info_per_agent, agent_keys, debug_dir=None, sav
         save_root = Path(debug_dir)
     else:
         try:
-            # keep all debug artifacts under the Hydra run directory
-            save_root = Path(HydraConfig.get().run.dir) / "debug_states"
+            # keep all debug artifacts under the Hydra job output directory (works in multirun)
+            save_root = Path(HydraConfig.get().runtime.output_dir) / "debug_states"
         except Exception:
             save_root = Path("debug_states")
 

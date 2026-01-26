@@ -181,7 +181,7 @@ def main(cfg: DictConfig) -> None:
                 wandb.log({"eval/samples": wandb.Image(grid)}, step=step + 1)
 
     # save the control agents inside the Hydra run directory (relative paths stay under the job output)
-    hydra_run_dir = Path(HydraConfig.get().run.dir)
+    hydra_run_dir = Path(HydraConfig.get().runtime.output_dir)
     save_control_agents(control_agents, soc_config.control_agent_save_path, hydra_run_dir)
 
     if wandb_run is not None:
