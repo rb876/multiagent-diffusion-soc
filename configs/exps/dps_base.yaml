@@ -1,0 +1,34 @@
+defaults:
+  - /model@score_model: unet_mnist
+  - /model@classifier_model: cnet_mnist
+  - /model@control_net_model: control_unet_mnist
+  - /data: mnist_learning_agents
+  - _self_
+
+soc:
+  method: dps_baseline_sampling
+  eps: 1e-3
+  num_control_agents: 2
+  num_diffusion_steps: 500
+  path_to_classifier_checkpoint: checkpoints/cnet.pt
+  path_to_score_model_checkpoint: checkpoints/latest.ckpt
+  eval_batch_size: 64
+  optimality_target: 0
+  sample_num_steps: 500
+  guidance_scale: 1000.0
+  aggregator:
+    mask_name: split 
+    use_overlap: false
+    overlap_size: 0
+  debug: true
+  optimality_criterion: 
+    name: classifier_ce_with_cooperation
+
+sde:
+  name: VE
+
+wandb:
+  project: soc-agent-diffusion
+  entity: null
+  name: null
+  tags: []

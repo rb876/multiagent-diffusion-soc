@@ -6,6 +6,7 @@ from hydra.core.hydra_config import HydraConfig
 import numpy as np
 import torch
 
+from src.samplers.diff_dyms import get_tweedy_estimate
 
 def _save_debug_states(info_agg, info_per_agent, agent_keys, debug_dir=None, save_last_only=True):
     """Persist aggregated and per-agent states for offline inspection."""
@@ -49,7 +50,7 @@ def euler_maruyama_sampler(
     shape=(1, 28, 28),
 ):
     """
-    Euler–Maruyama sampler for reverse-time SDE using your SDE wrapper.
+    Euler-Maruyama sampler for reverse-time SDE using your SDE wrapper.
     Assumes score_model outputs score ∇_x log p_t(x).
     Time runs from 1 -> eps with positive step_size.
     """
@@ -172,3 +173,99 @@ def euler_maruyama_controlled_sampler(
         }
     else:
         return aggregator([states[k] for k in agent_keys])
+    
+    
+
+def euler_maruyama_dps_sampler(
+    score_models,
+    aggregator,
+    sde,
+    optimality_loss,             
+    target,
+    image_dim: tuple = (1, 28, 28),
+    batch_size=64,
+    num_steps=500,
+    device="cuda",
+    eps=1e-3,
+    guidance_scale: float = 1.0,
+    debug: bool = False,
+):
+    agent_keys = list(score_models.keys())
+    if not agent_keys:
+        raise ValueError("score_models is empty.")
+
+    time_steps = torch.linspace(1.0, eps, num_steps, device=device)
+    if len(time_steps) < 2:
+        raise ValueError("num_steps must be at least 2 for Euler-Maruyama integration.")
+    step_size = time_steps[0] - time_steps[1]
+
+    t0 = torch.ones(batch_size, device=device)
+    init_std = sde.marginal_prob_std(t0).view(-1, 1, 1, 1)
+
+    states = {
+        key: torch.randn(batch_size, *image_dim, device=device) * init_std
+        for key in agent_keys
+    }
+
+    for k in agent_keys:
+        score_models[k].eval()
+
+    if debug:
+        info_per_agent = {k: [] for k in agent_keys}
+        info_agg = []
+
+    for idx in range(len(time_steps) - 1):
+        t_cur = time_steps[idx]
+        batch_t = torch.full((batch_size,), t_cur, device=device)
+
+        g = sde.diffusion_coeff(batch_t)                  # [B]
+        g_view = g.view(-1, 1, 1, 1)
+        g_sq_view = (g ** 2).view(-1, 1, 1, 1)
+        noise_scale = torch.sqrt(step_size) * g_view
+
+        with torch.enable_grad():
+            for k in agent_keys:
+                states[k] = states[k].detach().requires_grad_(True)
+
+            scores = {k: score_models[k](states[k], batch_t) for k in agent_keys}
+            x0_hats = {
+                k: get_tweedy_estimate(sde, states[k], batch_t, scores[k])
+                for k in agent_keys
+            }
+
+            Y0_hat = aggregator([x0_hats[k] for k in agent_keys])
+            loglik_scalar = optimality_loss.get_running_state_loss(Y0_hat, target, processes = [x0_hats[k] for k in agent_keys])
+            grads = torch.autograd.grad(
+                outputs=loglik_scalar,
+                inputs=[states[k] for k in agent_keys],
+                retain_graph=False,
+                create_graph=False,
+                allow_unused=False,
+            )
+            guidance = {k: grads[i] for i, k in enumerate(agent_keys)}
+
+        for k in agent_keys:
+            drift = (
+                -sde.f(states[k].detach(), batch_t)
+                + g_sq_view * scores[k].detach()
+                - g_sq_view * guidance_scale * guidance[k].detach()
+            )
+
+            mean_state = states[k].detach() + drift * step_size
+            states[k] = mean_state + noise_scale * torch.randn_like(mean_state)
+
+        if debug:
+            with torch.no_grad():
+                for k in agent_keys:
+                    info_per_agent[k].append(states[k].detach().cpu())
+                info_agg.append(aggregator([states[j] for j in agent_keys]).detach().cpu())
+
+    final_agg = aggregator([states[k] for k in agent_keys])
+
+    if debug:
+        return final_agg, {
+            "per_agent": info_per_agent,
+            "aggregated": info_agg,
+        }
+    else:
+        return final_agg

@@ -93,6 +93,21 @@
 
         },
         {
+            "name": "Python Debugger: DPS",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "workflows.dps_base",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "args": [
+                "--config-path",
+                "../configs",
+                "--config-name",
+                "exps/dps_base"
+            ]
+
+        },
+        {
             "name": "Python Debugger: Display Aggregator",
             "type": "debugpy",
             "request": "launch",
