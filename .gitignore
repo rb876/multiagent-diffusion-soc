@@ -218,3 +218,5 @@ multirun/
 # Model files
 *.ckpt
 *.pt
+*.npz
+*.png
