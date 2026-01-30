@@ -99,7 +99,6 @@ def euler_maruyama_controlled_sampler(
     }
 
     if debug:
-        print("Initial States:")
         info_per_agent = {key: [] for key in agent_keys}
         info_controls = {key: [] for key in agent_keys}
         info_agg = []
