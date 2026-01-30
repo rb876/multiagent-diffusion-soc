@@ -115,7 +115,7 @@ def train_control_bptt(
             system_states[key] = mean_state + noise_scale * torch.randn_like(system_states[key])
 
             # Control energy (averaged over batch)
-            cumulative_control_loss += torch.mean(controls[key] ** 2) * step_size
+            cumulative_control_loss += torch.mean(controls[key] ** 2) * step_size / len(agent_keys)
 
     # --- Terminal cost on Y_1 ---
     Y_final = aggregator([system_states[key] for key in agent_keys])
@@ -277,7 +277,7 @@ def fictitious_train_control_bptt(
                     with torch.no_grad():
                         agent_states[key] = mean_state + noise_scale * torch.randn_like(agent_states[key])
 
-            cumulative_control_loss += torch.mean(controls[player_key] ** 2) * step_size
+            cumulative_control_loss += torch.mean(controls[player_key] ** 2) * step_size / len(agent_keys)
         
         # --- Terminal cost on Y_1 ---
         Y_final = aggregator([agent_states[key] for key in agent_keys])
