@@ -2,6 +2,7 @@ import torch
 
 from collections import defaultdict
 from src.trainer.utils import compute_grad_norms
+from src.samplers.diff_dyms import get_tweedy_estimate
 
 
 def train_control_bptt(
@@ -95,9 +96,8 @@ def train_control_bptt(
         # --- Running Optimality Cost ---
         if running_state_cost_scaling > 0:
             # Compute denoised estimates for all agents (TWEEDY ESTIMATOR).
-            current_std = sde.marginal_prob_std(batch_time_step)[:, None, None, None]
             for key in agent_keys:
-                x0_hats[key] = system_states[key] + (current_std**2) * scores[key]
+                x0_hats[key] = get_tweedy_estimate(sde, system_states[key], batch_time_step, scores[key])
             # Tweedie estimator for each agent:
             # Aggregate the denoised estimates across agents for running optimality loss.
             Y_0_hat = aggregator([x0_hats[key] for key in agent_keys])
@@ -108,8 +108,9 @@ def train_control_bptt(
         # Progress system dynamics for all agents (Euler–Maruyama)
         noise_scale = torch.sqrt(step_size) * g_noise
         for key in agent_keys:
-            drift = g_sq * scores[key]  # reverse SDE drift term
-            mean_state = system_states[key] + (drift + g_noise * controls[key]) * step_size
+            # NOTE: I am negating as T goes from 1 to eps (reverse time) and the SDE is defined in forward time and the step is positive.
+            drift_rev = - sde.f(system_states[key], batch_time_step) + g_sq * scores[key]  # reverse SDE drift term
+            mean_state = system_states[key] + (drift_rev + g_noise * controls[key]) * step_size
             # Update system state with Euler-Maruyama step.
             system_states[key] = mean_state + noise_scale * torch.randn_like(system_states[key])
 
@@ -250,10 +251,9 @@ def fictitious_train_control_bptt(
                 scores[key] = score_model(agent_states[key], batch_time_step)
 
             if running_state_cost_scaling > 0:
-                current_std = sde.marginal_prob_std(batch_time_step)[:, None, None, None]
                 # Compute denoised estimates for all agents (TWEEDY ESTIMATOR).
                 x0_hats = {
-                    key: agent_states[key] + (current_std**2) * scores[key]
+                    key: get_tweedy_estimate(sde, agent_states[key], batch_time_step, scores[key])
                     for key in agent_keys
                 }
                 # Tweedie estimator for each agent:
@@ -269,8 +269,8 @@ def fictitious_train_control_bptt(
             # Progress system dynamics for all agents (Euler–Maruyama)
             noise_scale = torch.sqrt(step_size) * g_noise
             for key in agent_keys:
-                drift = g_sq * scores[key]
-                mean_state = agent_states[key] + (drift + g_noise * controls[key]) * step_size
+                drift_rev = - sde.f(agent_states[key], batch_time_step) + g_sq * scores[key]
+                mean_state = agent_states[key] + (drift_rev + g_noise * controls[key]) * step_size
                 if key == player_key:
                     agent_states[key] = mean_state + noise_scale * torch.randn_like(agent_states[key])
                 else:

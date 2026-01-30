@@ -2,6 +2,9 @@ import torch
 import torch.nn as nn
 import torchsde
 
+
+from src.samplers.diff_dyms import get_tweedy_estimate
+
 class MultiAgentControlledSDE(nn.Module):
     """
     Controlled reverse-time SDE for multiple agents, with an adjoint-friendly implementation.
@@ -134,10 +137,9 @@ class MultiAgentControlledSDE(nn.Module):
             controls[key] = ctrl_net(ctrl_input, batch_time)   # [B,C,H,W]
             scores[key] = self.score_model(x_k, batch_time)    # [B,C,H,W]
 
-        # Tweedie estimator: x0_hat = x_t + σ_t^2 * score
-        current_std = self.sde.marginal_prob_std(batch_time)[:, None, None, None]
+        # Tweedie estimator for each agent's states
         for key in self.agent_keys:
-            x0_hats[key] = states[key] + (current_std ** 2) * scores[key]
+            x0_hats[key] = get_tweedy_estimate(self.sde, states[key], batch_time, scores[key])
 
         # Running optimality integrand.
         Y_0_hat = self.aggregator([x0_hats[k] for k in self.agent_keys])
@@ -147,7 +149,7 @@ class MultiAgentControlledSDE(nn.Module):
 
         drift_states = {}
         for key in self.agent_keys:
-            drift_states[key] = g_sq * scores[key] + g[:, None, None, None] * controls[key]
+            drift_states[key] = - self.sde.f(states[key], batch_time) + g_sq * scores[key] + g[:, None, None, None] * controls[key]
 
         # ---- Drift for cumulative control cost c_ctrl ----
         # per-sample control energy: Σ_i E[||u_i||²] over image dims
