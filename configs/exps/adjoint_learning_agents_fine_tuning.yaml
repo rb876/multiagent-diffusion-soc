@@ -16,7 +16,7 @@ soc:
   num_control_agents: 2
   num_diffusion_steps: 500
   path_to_classifier_checkpoint: checkpoints/cnet.pt
-  path_to_score_model_checkpoint: checkpoints/latest.ckpt
+  path_to_score_model_checkpoint: checkpoints/ve/latest.ckpt
   running_state_cost_scaling: 10
   sample_batch_size: 64
   optimality_target: 0
