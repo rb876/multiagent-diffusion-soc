@@ -1,4 +1,5 @@
 import functools
+from pathlib import Path
 from typing import Dict, Any
 
 import hydra
@@ -8,14 +9,15 @@ import wandb
 from hydra.utils import to_absolute_path
 from omegaconf import DictConfig, OmegaConf
 from torchvision.utils import make_grid
+from hydra.core.hydra_config import HydraConfig
 
 from src.envs.aggregator import ImageMaskAggregator
 from src.envs.registry import get_optimality_criterion
 from src.models.registry import get_model_by_name
 from src.samplers.diff_dyms import SDE
 from src.trainer.soc_bptt_ft import fictitious_train_control_bptt
-from src.trainer.sco_adjoint_fict_ft import fictitious_train_control_adjoint
-from src.utils import generate_and_plot_samples
+from src.trainer.soc_adjoint_fict_ft import fictitious_train_control_adjoint
+from src.utils import generate_and_plot_samples, save_control_agents
 
 
 def _load_state(module: torch.nn.Module, checkpoint_path: str, device: torch.device) -> None:
@@ -43,7 +45,7 @@ def main(cfg: DictConfig) -> None:
 
             wandb_module = wandb_lib
             wandb_kwargs = {k: v for k, v in wandb_dict.items() if v not in (None, "", [], {})}
-            wandb_run = wandb_module.init(**wandb_kwargs)
+            wandb_run = wandb_module.init(**wandb_kwargs, reinit=True)
             wandb_run.config.update(OmegaConf.to_container(cfg, resolve=True), allow_val_change=True)
 
     # Load score model, classifier, and control nets
@@ -68,10 +70,6 @@ def main(cfg: DictConfig) -> None:
     ).to(device)
     classifier.eval()
     _load_state(classifier, soc_config.path_to_classifier_checkpoint, device)
-    optimality_criterion = get_optimality_criterion(
-        name=soc_config.optimality_criterion.name, 
-        classifier=classifier
-    ).to(device)
 
     # Initialize control nets
     control_cfg = OmegaConf.to_container(cfg.exps.control_net_model, resolve=True)
@@ -92,6 +90,12 @@ def main(cfg: DictConfig) -> None:
         **aggregator_cfg
     )
 
+    optimality_criterion = get_optimality_criterion(
+        name=soc_config.optimality_criterion.name, 
+        classifier=classifier, 
+        aggregator=aggregator,
+    ).to(device)
+
     # Select training method
     if soc_config.method == "bptt":
         train_soc_fn = fictitious_train_control_bptt
@@ -99,29 +103,29 @@ def main(cfg: DictConfig) -> None:
         train_soc_fn = fictitious_train_control_adjoint
     else:
         raise ValueError(f"Unknown training method: {soc_config.method}")
-
     from tqdm.auto import tqdm
     pbar = tqdm(range(soc_config.outer_iters), desc="Training control policy")
     for step in pbar:
         # NOTE: we intialise the optmizer inside the training function to reset it every iteration.
         # We could also pass in the optimizer state if we wanted to keep it across iterations.
         loss_dict, info = train_soc_fn(
-            score_model=score_model,
-            optimality_criterion=optimality_criterion,
-            control_agents=control_agents,
             aggregator=aggregator,
-            sde=sde,
-            optimality_target=soc_config.target_digit,
-            num_steps=soc_config.train_num_steps,
             batch_size=soc_config.batch_size,
-            device=device,
-            eps=soc_config.eps,
-            lambda_reg=soc_config.lambda_reg,
-            inner_iters=soc_config.inner_iters,
-            running_optimality_reg=soc_config.running_optimality_reg,
-            learning_rate=soc_config.learning_rate,
-            image_dim=tuple(cfg.exps.data.loader.img_size),
+            control_agents=control_agents,
             debug=soc_config.debug,
+            device=device,
+            enable_optimality_loss_on_processes=soc_config.enable_optimality_loss_on_processes,
+            eps=soc_config.eps,
+            image_dim=tuple(cfg.exps.data.loader.img_size),
+            inner_iters=soc_config.inner_iters,
+            lambda_reg=soc_config.lambda_reg,
+            learning_rate=soc_config.learning_rate,
+            num_steps=soc_config.train_num_steps,
+            optimality_criterion=optimality_criterion,
+            optimality_target=soc_config.optimality_target,
+            running_state_cost_scaling=soc_config.running_state_cost_scaling,
+            score_model=score_model,
+            sde=sde,
         )
 
         if isinstance(loss_dict, dict):
@@ -142,7 +146,7 @@ def main(cfg: DictConfig) -> None:
         if wandb_run is not None:
             log_payload = {
                 "train/total_loss": total_val,
-                "train/target_digit": soc_config.target_digit,
+                "train/optimality_target": soc_config.optimality_target,
                 "iteration": step + 1,
             }
             if soc_config.get("debug", False) and info:
@@ -176,6 +180,9 @@ def main(cfg: DictConfig) -> None:
                 grid = make_grid(samples.detach().cpu(), nrow=8, normalize=True, value_range=(0.0, 1.0))
                 wandb.log({"eval/samples": wandb.Image(grid)}, step=step + 1)
 
+    # save the control agents inside the Hydra run directory (relative paths stay under the job output)
+    hydra_run_dir = Path(HydraConfig.get().runtime.output_dir)
+    save_control_agents(control_agents, soc_config.control_agent_save_path, hydra_run_dir)
 
     if wandb_run is not None:
         wandb_run.finish()

@@ -1,4 +1,4 @@
-import functools
+from pathlib import Path
 from typing import Dict, Any
 
 import hydra
@@ -7,6 +7,7 @@ import wandb
 from torchvision.utils import make_grid
 from hydra.utils import to_absolute_path
 from omegaconf import DictConfig, OmegaConf
+from hydra.core.hydra_config import HydraConfig
 
 from src.envs.aggregator import ImageMaskAggregator
 from src.envs.registry import get_optimality_criterion
@@ -14,7 +15,7 @@ from src.models.registry import get_model_by_name
 from src.samplers.diff_dyms import SDE
 from src.trainer.soc_adjoint_ft import train_control_adjoint
 from src.trainer.soc_bptt_ft import train_control_bptt
-from src.utils import generate_and_plot_samples
+from src.utils import generate_and_plot_samples, save_control_agents
 
 
 def _load_state(module: torch.nn.Module, checkpoint_path: str, device: torch.device) -> None:
@@ -55,6 +56,8 @@ def main(cfg: DictConfig) -> None:
         **score_model_cfg
     ).to(device)
     score_model.eval()
+    # Freezes the model’s parameters so they don’t get gradients or updates. 
+    # It does not stop autograd from building a graph or computing gradients with respect to other tensors.
     score_model.requires_grad_(False)
     _load_state(score_model, soc_config.path_to_score_model_checkpoint, device)
 
@@ -67,11 +70,6 @@ def main(cfg: DictConfig) -> None:
     ).to(device)
     classifier.eval()
     _load_state(classifier, soc_config.path_to_classifier_checkpoint, device)
-    # Initialize optimality criterion based on the classifier.
-    optimality_criterion = get_optimality_criterion(
-        name=soc_config.optimality_criterion.name, 
-        classifier=classifier
-    ).to(device)
 
     # Initialize control nets
     control_cfg = OmegaConf.to_container(cfg.exps.control_net_model, resolve=True)
@@ -98,6 +96,12 @@ def main(cfg: DictConfig) -> None:
         device=device,
         **aggregator_cfg
     )
+    # Initialize optimality criterion based on the classifier.
+    optimality_criterion = get_optimality_criterion(
+        name=soc_config.optimality_criterion.name, 
+        classifier=classifier,
+        aggregator=aggregator,
+    ).to(device)
 
     # Select training method
     if soc_config.method == "bptt":
@@ -106,26 +110,26 @@ def main(cfg: DictConfig) -> None:
         train_soc_fn = train_control_adjoint
     else:
         raise ValueError(f"Unknown training method: {soc_config.method}")
-
     from tqdm.auto import tqdm
     pbar = tqdm(range(soc_config.iters), desc="Training control policy")
     for step in pbar:
         loss, info = train_soc_fn(
-            batch_size=soc_config.batch_size,
-            optimality_criterion=optimality_criterion,
-            control_agents=control_agents,
             aggregator=aggregator,
-            sde=sde,
+            batch_size=soc_config.batch_size,
+            control_agents=control_agents,
+            debug=soc_config.debug,
             device=device,
+            enable_optimality_loss_on_processes=soc_config.enable_optimality_loss_on_processes,
             eps=soc_config.eps,
+            image_dim=tuple(cfg.exps.data.loader.img_size),
             lambda_reg=soc_config.lambda_reg,
             num_steps=soc_config.train_num_steps,
-            optimizer=optimizer,
-            running_optimality_reg=soc_config.running_optimality_reg,
-            score_model=score_model,
+            optimality_criterion=optimality_criterion,
             optimality_target=soc_config.optimality_target,
-            image_dim=tuple(cfg.exps.data.loader.img_size),
-            debug=soc_config.debug,
+            optimizer=optimizer,
+            running_state_cost_scaling=soc_config.running_state_cost_scaling,
+            score_model=score_model,
+            sde=sde,
         )
         loss_value = float(loss)
         pbar.set_postfix(loss=f"{loss_value:.4f}")
@@ -171,7 +175,9 @@ def main(cfg: DictConfig) -> None:
                 grid = make_grid(samples.detach().cpu(), nrow=8, normalize=True, value_range=(0.0, 1.0))
                 wandb.log({"eval/samples": wandb.Image(grid)}, step=step + 1)
 
-
+    # Save control agents under the Hydra run directory.
+    hydra_run_dir = Path(HydraConfig.get().runtime.output_dir)
+    save_control_agents(control_agents, soc_config.control_agent_save_path, hydra_run_dir)
     if wandb_run is not None:
         wandb_run.finish()
 

@@ -212,8 +212,11 @@ outputs/
 logs/
 wandb/
 checkpoints/
+multirun/
 
 
 # Model files
 *.ckpt
 *.pt
+*.npz
+*.png
