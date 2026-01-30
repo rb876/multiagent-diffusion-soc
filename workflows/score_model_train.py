@@ -30,22 +30,11 @@ def main(cfg: DictConfig) -> None:
     # Create the marginal probability std function
     # this defines the VE SDE dynamics
     sde = SDE(mode=training_cfg.sde.name, device=device)
-    sigma = training_cfg.sde.sigma
-    marginal_prob_std_fn = functools.partial(
-        sde.marginal_prob_std,
-        sigma=sigma,
-        device=device,
-    )
-    diffusion_coeff_fn = functools.partial(
-        sde.diffusion_coeff,
-        sigma=sigma,
-        device=device,
-    )
 
     # Create the score model
     score_model = get_model_by_name(
         cfg.exps.model.name,
-        marginal_prob_std=marginal_prob_std_fn,
+        marginal_prob_std=sde.marginal_prob_std,
         **OmegaConf.to_container(cfg.exps.model, resolve=True)
     )
 
@@ -78,8 +67,7 @@ def main(cfg: DictConfig) -> None:
     # Building a sampler for evaluating training progress
     euler_maruyama_sampler_partial = functools.partial(
         euler_maruyama_sampler,
-        marginal_prob_std=marginal_prob_std_fn,
-        diffusion_coeff=diffusion_coeff_fn,
+        sde=sde,
         batch_size=training_cfg.get("eval_batch_size", 64),
         num_steps=training_cfg.get("eval_num_steps", 500),
         device=device,
