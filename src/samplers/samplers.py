@@ -40,32 +40,50 @@ def _save_debug_states(info_agg, info_per_agent, agent_keys, debug_dir=None, sav
 
 
 def euler_maruyama_sampler(
-  score_model,
-  marginal_prob_std,
-  diffusion_coeff,
-  batch_size=64,
-  num_steps=500,
-  device='cuda',
-  eps=1e-3
+    score_model,
+    sde,
+    batch_size=64,
+    num_steps=500,
+    device="cuda",
+    eps=1e-3,
+    shape=(1, 28, 28),
 ):
-	"""
-	Generate samples from score-based models with the Euler-Maruyama solver.
-	"""
-	t = torch.ones(batch_size, device=device)
-	init_x = torch.randn(batch_size, 1, 28, 28, device=device) \
-	* marginal_prob_std(t)[:, None, None, None]
-	time_steps = torch.linspace(1., eps, num_steps, device=device)
-	step_size = time_steps[0] - time_steps[1]
-	x = init_x
+    """
+    Euler–Maruyama sampler for reverse-time SDE using your SDE wrapper.
+    Assumes score_model outputs score ∇_x log p_t(x).
+    Time runs from 1 -> eps with positive step_size.
+    """
+    score_model.eval()
 
-	with torch.no_grad():
-		for time_step in range(len(time_steps)):
-			batch_time_step = torch.ones(batch_size, device=device) * time_steps[time_step]
-			g = diffusion_coeff(batch_time_step)
-			mean_x = x + (g**2)[:, None, None, None] * score_model(x, batch_time_step) * step_size
-			x = mean_x + torch.sqrt(step_size) * g[:, None, None, None] * torch.randn_like(x)
+    time_steps = torch.linspace(1.0, eps, num_steps, device=device)
+    if len(time_steps) < 2:
+        raise ValueError("num_steps must be >= 2")
+    step_size = time_steps[0] - time_steps[1]  # positive
 
-	return mean_x
+    # init at t=1
+    t0 = torch.ones(batch_size, device=device)
+    init_std = sde.marginal_prob_std(t0).view(-1, *([1] * len(shape)))
+    x = torch.randn(batch_size, *shape, device=device) * init_std
+
+    with torch.no_grad():
+        mean_x = x
+        for t in time_steps:
+            batch_t = torch.full((batch_size,), t, device=device)
+
+            g = sde.diffusion_coeff(batch_t)                      # [B]
+            g_view = g.view(-1, *([1] * len(shape)))
+            g_sq_view = (g ** 2).view(-1, *([1] * len(shape)))
+
+            score = score_model(x, batch_t)                       # same shape as x
+
+            # reverse-time drift under positive step_size convention:
+            drift = -sde.f(x, batch_t) + g_sq_view * score
+
+            mean_x = x + drift * step_size
+            x = mean_x + torch.sqrt(step_size) * g_view * torch.randn_like(x)
+
+    return mean_x
+
 
 
 def euler_maruyama_controlled_sampler(
