@@ -41,7 +41,6 @@ def train_control_bptt(
     optimizer.zero_grad()
 
     # --- Time discretisation ---
-    # Example: steps=[1.0, 0.9, ..., eps]. Length = num_steps.
     time_steps = torch.linspace(1.0, eps, num_steps, device=device)
     if len(time_steps) < 2:
         raise ValueError("num_steps must be at least 2 to compute a diffusion step.")
@@ -110,7 +109,7 @@ def train_control_bptt(
         noise_scale = torch.sqrt(step_size) * g_noise
         for key in agent_keys:
             drift = g_sq * scores[key]  # reverse SDE drift term
-            mean_state = system_states[key] + (drift + controls[key]) * step_size
+            mean_state = system_states[key] + (drift + g_noise * controls[key]) * step_size
             # Update system state with Euler-Maruyama step.
             system_states[key] = mean_state + noise_scale * torch.randn_like(system_states[key])
 
@@ -271,7 +270,7 @@ def fictitious_train_control_bptt(
             noise_scale = torch.sqrt(step_size) * g_noise
             for key in agent_keys:
                 drift = g_sq * scores[key]
-                mean_state = agent_states[key] + (drift + controls[key]) * step_size
+                mean_state = agent_states[key] + (drift + g_noise * controls[key]) * step_size
                 if key == player_key:
                     agent_states[key] = mean_state + noise_scale * torch.randn_like(agent_states[key])
                 else:

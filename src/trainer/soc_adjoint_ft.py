@@ -147,7 +147,7 @@ class MultiAgentControlledSDE(nn.Module):
 
         drift_states = {}
         for key in self.agent_keys:
-            drift_states[key] = g_sq * scores[key] + controls[key]
+            drift_states[key] = g_sq * scores[key] + g[:, None, None, None] * controls[key]
 
         # ---- Drift for cumulative control cost c_ctrl ----
         # per-sample control energy: Σ_i E[||u_i||²] over image dims

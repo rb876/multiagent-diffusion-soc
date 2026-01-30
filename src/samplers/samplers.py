@@ -123,7 +123,7 @@ def euler_maruyama_controlled_sampler(
                 drift = g_sq * score_model(states[key], batch_time_step)
                 states[key] = (
                     states[key]
-                    + (drift + controls[key]) * step_size
+                    + (drift + g[:, None, None, None] * controls[key]) * step_size
                     + noise_scale * torch.randn_like(states[key])
                 )
 

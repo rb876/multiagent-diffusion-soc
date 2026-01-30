@@ -77,7 +77,7 @@ class MultiAgentControlledSDE(nn.Module):
             u = self.control_agents[str(k)](ctrl_in, batch_time)
             s = self.score_model(x, batch_time)
 
-            controls[k] = u
+            controls[k] = g[:, None, None, None] * u
             scores[k] = s
             x0_hats[k] = x + (current_std ** 2) * s
 
