@@ -120,7 +120,7 @@ def euler_maruyama_controlled_sampler(
                 controls[key] = control_agents[key](control_input, batch_time_step)
 
             for key in agent_keys:
-                drift = g_sq * score_model(states[key], batch_time_step)
+                drift = - sde.f(states[key], batch_time_step) + g_sq * score_model(states[key], batch_time_step)
                 states[key] = (
                     states[key]
                     + (drift + g[:, None, None, None] * controls[key]) * step_size
