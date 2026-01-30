@@ -5,7 +5,6 @@ defaults:
 
 training:
   device: cuda
-  sigma: 25.0
   evaluate_every: 1
   eval_batch_size: 64
   eval_num_steps: 500
@@ -27,3 +26,5 @@ training:
     name: null
     step_on: CosineAnnealingLR
     params: {}
+  sde: 
+    name: VE

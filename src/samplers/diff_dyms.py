@@ -14,47 +14,6 @@ def _to_tensor(t, device: str = "cuda", dtype=torch.float32):
     return t
 
 
-class SDE:
-    """
-    Wrapper for VE / VP SDEs providing:
-        - marginal_prob_std(t)
-        - diffusion_coeff(t)
-
-    mode = "VE": sigma-based VE SDE
-    mode = "VP": VP SDE with beta_min/beta_max
-    """
-
-    def __init__(
-        self,
-        mode: str = "VP",
-        *,
-        sigma: float = 25,          # for VE
-        beta_min: float = 0.1,      # for VP
-        beta_max: float = 20.0,     # for VP
-        device: str = "cuda",
-    ) -> None:
-        self.mode = mode
-        self.device = device
-
-        if mode == "VE":
-            if sigma is None:
-                raise ValueError("sigma must be provided for VE SDE.")
-            self.sigma = float(sigma)
-            self.marginal_prob_std, self.diffusion_coeff, self.f = make_ve_sde(
-                sigma=self.sigma, device=device
-            )
-        elif mode == "VP":
-            self.beta_min = float(beta_min)
-            self.beta_max = float(beta_max)
-            self.marginal_prob_std, self.diffusion_coeff, self.f = make_vp_sde(
-                beta_min=self.beta_min,
-                beta_max=self.beta_max,
-                device=device,
-            )
-        else:
-            raise ValueError(f"Unknown SDE mode: {mode}")
-
-
 # -------- VE SDE --------
 def make_ve_sde(sigma: float, device: str = "cuda"):
     """
@@ -96,14 +55,14 @@ def make_vp_sde(beta_min: float = 0.1, beta_max: float = 20.0, device: str = "cu
     beta_min = float(beta_min)
     beta_max = float(beta_max)
 
-    def _log_alpha(t):
+    def log_alpha(t):
         # log α(t)
         return -0.25 * (beta_max - beta_min) * t**2 - 0.5 * beta_min * t
 
     def marginal_prob_std(t):
         t_ = _to_tensor(t, device=device)
-        log_alpha = _log_alpha(t_)
-        alpha = torch.exp(log_alpha)
+        log_alpha_val = log_alpha(t_)
+        alpha = torch.exp(log_alpha_val)
         return torch.sqrt(1.0 - alpha**2)
 
     def diffusion_coeff(t):
@@ -117,7 +76,49 @@ def make_vp_sde(beta_min: float = 0.1, beta_max: float = 20.0, device: str = "cu
         beta_view = beta_t.view(-1, *([1] * (x.ndim - 1)))
         return -0.5 * beta_view * x
 
-    return marginal_prob_std, diffusion_coeff, f
+    return marginal_prob_std, diffusion_coeff, f, log_alpha
+
+
+class SDE:
+    """
+    Wrapper for VE / VP SDEs providing:
+        - marginal_prob_std(t)
+        - diffusion_coeff(t)
+
+    mode = "VE": sigma-based VE SDE
+    mode = "VP": VP SDE with beta_min/beta_max
+    """
+
+    def __init__(
+        self,
+        mode: str = "VP",
+        *,
+        sigma: float = 25,          # for VE
+        beta_min: float = 0.1,      # for VP
+        beta_max: float = 20.0,     # for VP
+        device: str = "cuda",
+    ) -> None:
+        self.mode = mode
+        self.device = device
+
+        if mode == "VE":
+            if sigma is None:
+                raise ValueError("sigma must be provided for VE SDE.")
+            self.sigma = float(sigma)
+            self.marginal_prob_std, self.diffusion_coeff, self.f = make_ve_sde(
+                sigma=self.sigma, device=device
+            )
+        elif mode == "VP":
+            self.beta_min = float(beta_min)
+            self.beta_max = float(beta_max)
+            self.marginal_prob_std, self.diffusion_coeff, self.f, self.log_alpha = make_vp_sde(
+                beta_min=self.beta_min,
+                beta_max=self.beta_max,
+                device=device,
+            )
+            self.alpha = lambda t: torch.exp(self.log_alpha(t))
+        else:
+            raise ValueError(f"Unknown SDE mode: {mode}")
 
 
 def get_tweedy_estimate(sde: SDE, x: torch.Tensor, t: torch.Tensor, score: torch.Tensor) -> torch.Tensor:
@@ -130,8 +131,7 @@ def get_tweedy_estimate(sde: SDE, x: torch.Tensor, t: torch.Tensor, score: torch
 
     def tweedie_vp(x, t, score, sde):
         std = sde.marginal_prob_std(t)      # sqrt(1 - alpha^2)
-        log_alpha = -0.25 * (sde.beta_max - sde.beta_min) * t**2 - 0.5 * sde.beta_min * t
-        alpha = torch.exp(log_alpha)
+        alpha = sde.alpha(t)
 
         std2 = (std**2).view(-1, *([1]*(x.ndim-1)))
         alpha_view = alpha.view(-1, *([1]*(x.ndim-1)))

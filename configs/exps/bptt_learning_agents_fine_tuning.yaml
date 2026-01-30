@@ -34,7 +34,6 @@ soc:
 
 sde:
   name: VE
-  sigma: 25.0
 
 wandb:
   project: soc-agent-diffusion

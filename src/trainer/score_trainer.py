@@ -15,7 +15,7 @@ def score_model_trainer(
     ema_decay,
     loss_fn,
     lr,
-    marginal_prob_std_fn,
+    sde,
     n_epochs,
     score_model,
     *,
@@ -96,7 +96,7 @@ def score_model_trainer(
                 x = batch
             x = x.to(device)
 
-            loss = loss_fn(score_model, x, marginal_prob_std_fn)
+            loss = loss_fn(score_model, x, sde)
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
 
