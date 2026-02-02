@@ -84,12 +84,8 @@ def train_control_bptt(
         Y_t = aggregator([system_states[key] for key in agent_keys])
 
         # Compute controls and scores for all agents
-        controls, scores, x0_hats = {}, {}, {}
+        scores, x0_hats = {}, {}
         for key in agent_keys:
-            # Compute control input by concatenating the system state of the current agent with the aggregated state.
-            control_input = torch.cat([system_states[key], Y_t], dim=1)
-            controls[key] = control_agents[key](control_input, batch_time_step)
-            # NOTE: assume that the score model is shared across agents. 
             # This will need to be modifid as we expect to have different score models per agent in the future.
             scores[key] = score_model(system_states[key], batch_time_step)
 
@@ -104,7 +100,29 @@ def train_control_bptt(
             # Compute running optimality loss.
             cumulative_optimality_loss += optimality_criterion.get_running_state_loss(
                 Y_0_hat, optimality_target, processes=[x0_hats[key] for key in agent_keys] if enable_optimality_loss_on_processes else None) * step_size
-    
+        # Compute controls for all agents
+        controls = {}
+        for key in agent_keys:
+            if running_state_cost_scaling > 0:
+                with torch.enable_grad():
+                    x0_guidance = x0_hats[key].detach().requires_grad_(True)
+                    Y0_hat_guidance = aggregator([
+                        x0_guidance if kk == key else x0_hats[kk].detach()
+                        for kk in agent_keys
+                    ])
+                    loss = optimality_criterion.get_running_state_loss(
+                        Y0_hat_guidance,
+                        optimality_target,
+                        processes=[x0_guidance if kk == key else x0_hats[kk].detach() for kk in agent_keys]
+                        if enable_optimality_loss_on_processes else None,
+                    )
+                    grad_input = torch.autograd.grad(loss, x0_guidance, create_graph=False)[0].detach()
+            else:
+                grad_input = torch.zeros_like(system_states[key])
+
+            control_input = torch.cat([system_states[key], Y_t, grad_input], dim=1)
+            controls[key] = control_agents[key](control_input, batch_time_step)
+
         # Progress system dynamics for all agents (Euler–Maruyama)
         noise_scale = torch.sqrt(step_size) * g_noise
         for key in agent_keys:
@@ -234,18 +252,7 @@ def fictitious_train_control_bptt(
             # Aggregate current agent states
             Y_t = aggregator([agent_states[key] for key in agent_keys])
         
-            # Compute controls and scores for all agents
-            controls = {}
-            for key in agent_keys:
-                control_input = torch.cat([agent_states[key], Y_t], dim=1)
-                if key == player_key:
-                    controls[key] = control_agents[key](control_input, batch_time_step)
-                else:
-                    # Other agents are fixed during this training step.
-                    # No gradient computation for their control policies.
-                    with torch.no_grad():
-                        controls[key] = control_agents[key](control_input, batch_time_step).detach()
-
+            # Compute scores for all agents
             scores = {}
             for key in agent_keys:
                 scores[key] = score_model(agent_states[key], batch_time_step)
@@ -257,7 +264,6 @@ def fictitious_train_control_bptt(
                     for key in agent_keys
                 }
                 # Tweedie estimator for each agent:
-                #     \hat x_0 = x_t + σ_t^2 * score(x_t, t)
                 # Aggregate the denoised estimates across agents for running optimality loss.
                 Y_0_hat = aggregator([x0_hats[key] for key in agent_keys])
 
@@ -266,6 +272,34 @@ def fictitious_train_control_bptt(
                 cumulative_optimality_loss += optimality_criterion.get_running_state_loss(
                     Y_0_hat, optimality_target, processes=[x0_hats[key] for key in agent_keys] if enable_optimality_loss_on_processes else None) * step_size
             
+            controls = {}
+            for key in agent_keys:
+                if running_state_cost_scaling > 0:
+                    with torch.enable_grad():
+                        x0_guidance = x0_hats[key].detach().requires_grad_(True)
+                        Y0_hat_guidance = aggregator([
+                            x0_guidance if kk == key else x0_hats[kk].detach()
+                            for kk in agent_keys
+                        ])
+                        loss = optimality_criterion.get_running_state_loss(
+                            Y0_hat_guidance,
+                            optimality_target,
+                            processes=[x0_guidance if kk == key else x0_hats[kk].detach() for kk in agent_keys]
+                            if enable_optimality_loss_on_processes else None,
+                        )
+                        grad_input = torch.autograd.grad(loss, x0_guidance, create_graph=False)[0].detach()
+                else:
+                    grad_input = torch.zeros_like(agent_states[key])                
+                
+                control_input = torch.cat([agent_states[key], Y_t, grad_input], dim=1)
+                if key == player_key:
+                    controls[key] = control_agents[key](control_input, batch_time_step)
+                else:
+                    # Other agents are fixed during this training step.
+                    # No gradient computation for their control policies.
+                    with torch.no_grad():
+                        controls[key] = control_agents[key](control_input, batch_time_step).detach()
+           
             # Progress system dynamics for all agents (Euler–Maruyama)
             noise_scale = torch.sqrt(step_size) * g_noise
             for key in agent_keys:

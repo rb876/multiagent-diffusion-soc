@@ -69,7 +69,6 @@ class MultiAgentControlledSDE(nn.Module):
         g_sq = (g ** 2).view(B, 1, 1, 1)
 
         Y_t = self.aggregator([states[k] for k in self.agent_keys])
-        current_std = self.sde.marginal_prob_std(batch_time).view(B, 1, 1, 1)
 
         controls, scores, x0_hats = {}, {}, {}
         for k in self.agent_keys:

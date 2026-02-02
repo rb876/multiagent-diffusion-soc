@@ -87,6 +87,8 @@ def euler_maruyama_sampler(
 
 
 
+import torch
+
 def euler_maruyama_controlled_sampler(
     score_model,
     control_agents,
@@ -99,11 +101,18 @@ def euler_maruyama_controlled_sampler(
     eps=1e-3,
     debug: bool = False,
     debug_dir=None,
+    save_debug_info=True,
+    use_grad_guidance: bool = True,          # include grad channel like in training
+    optimality_criterion=None,               # needed if use_grad_guidance=True
+    optimality_target=None,                  # needed if use_grad_guidance=True
+    enable_optimality_loss_on_processes=True,
 ):
-    
     agent_keys = sorted(control_agents.keys())
     if not agent_keys:
         raise ValueError("No control agents provided to controlled sampler.")
+
+    if use_grad_guidance and (optimality_criterion is None or optimality_target is None):
+        raise ValueError("If use_grad_guidance=True, provide optimality_criterion and optimality_target.")
 
     t = torch.ones(batch_size, device=device)
     time_steps = torch.linspace(1.0, eps, num_steps, device=device)
@@ -121,11 +130,10 @@ def euler_maruyama_controlled_sampler(
         info_per_agent = {key: [] for key in agent_keys}
         info_controls = {key: [] for key in agent_keys}
         info_agg = []
-        
 
     with torch.no_grad():
         for idx in range(len(time_steps)):
-            batch_time_step = torch.ones(batch_size, device=device) * time_steps[idx]
+            batch_time_step = torch.full((batch_size,), time_steps[idx], device=device)
 
             g = sde.diffusion_coeff(batch_time_step)
             g_sq = (g**2)[:, None, None, None]
@@ -133,13 +141,46 @@ def euler_maruyama_controlled_sampler(
 
             Y_t = aggregator([states[key] for key in agent_keys])
 
+            # --- compute x0_hats once (no extra score pass) ---
+            scores = {k: score_model(states[k], batch_time_step) for k in agent_keys}
+
+            x0_hats = None
+            if use_grad_guidance:
+                # Tweedie: x0_hat = x_t + sigma^2 * score(x_t,t) (or your get_tweedy_estimate)
+                sigma2 = (sde.marginal_prob_std(batch_time_step) ** 2)[:, None, None, None]
+                x0_hats = {k: states[k] + sigma2 * scores[k] for k in agent_keys}
+
             controls = {}
             for key in agent_keys:
-                control_input = torch.cat([states[key], Y_t], dim=1)
+                if use_grad_guidance:
+                    # guidance gradient w.r.t. x0_hat (no extra score forward)
+                    with torch.enable_grad():
+                        x0_guidance = x0_hats[key].detach().requires_grad_(True)
+
+                        Y0_hat_guidance = aggregator([
+                            x0_guidance if kk == key else x0_hats[kk].detach()
+                            for kk in agent_keys
+                        ])
+
+                        loss = optimality_criterion.get_running_state_loss(
+                            Y0_hat_guidance,
+                            optimality_target,
+                            processes=(
+                                [x0_guidance if kk == key else x0_hats[kk].detach() for kk in agent_keys]
+                                if enable_optimality_loss_on_processes
+                                else None
+                            ),
+                        ).sum()
+
+                        grad_input = torch.autograd.grad(loss, x0_guidance, create_graph=False)[0].detach()
+                else:
+                    grad_input = torch.zeros_like(states[key])
+
+                control_input = torch.cat([states[key], Y_t, grad_input], dim=1)
                 controls[key] = control_agents[key](control_input, batch_time_step)
 
             for key in agent_keys:
-                drift = - sde.f(states[key], batch_time_step) + g_sq * score_model(states[key], batch_time_step)
+                drift = -sde.f(states[key], batch_time_step) + g_sq * scores[key]
                 states[key] = (
                     states[key]
                     + (drift + g[:, None, None, None] * controls[key]) * step_size
@@ -147,34 +188,33 @@ def euler_maruyama_controlled_sampler(
                 )
 
             if debug:
-                # aggregated snapshot at this step
                 info_agg.append(Y_t.clone().detach().cpu().numpy())
-                # per-agent snapshots
                 for key in agent_keys:
                     info_per_agent[key].append(states[key].clone().detach().cpu().numpy())
-                # control signals
-                for key in agent_keys:
                     info_controls[key].append(controls[key].clone().detach().cpu().numpy())
 
     if debug:
         for key in agent_keys:
             assert len(info_per_agent[key]) == len(time_steps)
         assert len(info_agg) == len(time_steps)
+
         final_agg = aggregator([states[k] for k in agent_keys])
 
-        # save debug states as numpy arrays for further analysis as well as the aggregated state
-        save_dir = _save_debug_states(info_agg, info_per_agent, agent_keys, debug_dir)
+        if save_debug_info:
+            save_dir = _save_debug_states(info_agg, info_per_agent, agent_keys, debug_dir)
+        else:
+            save_dir = None
 
         return final_agg, {
             "per_agent": info_per_agent,
             "aggregated": info_agg,
             "controls": info_controls,
-            "save_dir": str(save_dir),
+            "save_dir": str(save_dir) if save_debug_info else None,
         }
     else:
         return aggregator([states[k] for k in agent_keys])
     
-    
+
 
 def euler_maruyama_dps_sampler(
     score_models,

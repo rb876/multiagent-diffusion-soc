@@ -1,5 +1,5 @@
-name: unet
-in_channels: 2
+name: cond_unet
+in_channels: 3
 out_channels: 1
 model_channels: 32
 channel_mult: [1, 2]

@@ -78,7 +78,8 @@ def main(cfg: DictConfig) -> None:
     control_agents = {}
     for i in range(soc_config.num_control_agents):
         control_agents[i] = get_model_by_name(
-            control_name, marginal_prob_std=sde.marginal_prob_std, **control_cfg
+            control_name, 
+            **control_cfg
         ).to(device)
         control_agents[i].train()
 
@@ -168,6 +169,8 @@ def main(cfg: DictConfig) -> None:
                 score_model=score_model,
                 debug=soc_config.debug,
                 step=step,
+                optimality_criterion=optimality_criterion,
+                optimality_target=soc_config.optimality_target,
             )
             if wandb_run is not None:
                 log_payload: Dict[str, Any] = {"eval/iteration": step + 1}

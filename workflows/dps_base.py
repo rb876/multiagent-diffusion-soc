@@ -1,8 +1,12 @@
-from typing import Dict
+from typing import Dict, Any
+from pathlib import Path
+from hydra.core.hydra_config import HydraConfig
 
 import hydra
 import torch
 import wandb
+import numpy as np
+
 from torchvision.utils import make_grid
 from hydra.utils import to_absolute_path
 from omegaconf import DictConfig, OmegaConf
@@ -20,6 +24,18 @@ def _load_state(module: torch.nn.Module, checkpoint_path: str, device: torch.dev
     else:
         state_dict = checkpoint
     module.load_state_dict(state_dict, strict=False)
+
+
+def _to_numpy(obj: Any):
+    if hasattr(obj, "detach"):
+        return obj.detach().cpu().numpy()
+    if isinstance(obj, np.ndarray):
+        return obj
+    if isinstance(obj, dict):
+        return {k: _to_numpy(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return type(obj)(_to_numpy(v) for v in obj)
+    return np.array(obj)
 
 
 @hydra.main(config_path="../configs", version_base=None)
@@ -80,7 +96,7 @@ def main(cfg: DictConfig) -> None:
         aggregator=aggregator,
     ).to(device)
 
-    samples = euler_maruyama_dps_sampler(
+    samples, info = euler_maruyama_dps_sampler(
         score_models={key: score_model for key in range(soc_config.num_control_agents)},
         aggregator=aggregator,
         sde=sde,
@@ -88,7 +104,19 @@ def main(cfg: DictConfig) -> None:
         target=soc_config.optimality_target,
         guidance_scale=soc_config.guidance_scale,
         batch_size=soc_config.eval_batch_size,
+        debug=True,
         )
+    # save inside the hydra run directory
+    hydra_output_dir = Path(HydraConfig.get().runtime.output_dir)
+    samples_np = samples.detach().cpu().numpy()
+    info_np = _to_numpy(info)
+    np.save(hydra_output_dir / "samples.npy", samples_np)
+    if isinstance(info_np, dict) and all(isinstance(v, np.ndarray) for v in info_np.values()):
+        # save a flat dict of arrays as compressed npz
+        np.savez_compressed(hydra_output_dir / "info.npz", **info_np)
+    else:
+        # fallback for nested structures
+        np.save(hydra_output_dir / "info.npy", info_np, allow_pickle=True)
     if wandb_run is not None:
         grid = make_grid(samples.detach().cpu(), nrow=8, normalize=True, value_range=(0.0, 1.0))
         wandb.log({"eval/samples": wandb.Image(grid)}, step=0)

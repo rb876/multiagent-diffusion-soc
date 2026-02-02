@@ -173,6 +173,8 @@ def main(cfg: DictConfig) -> None:
                 device=str(device),
                 debug=soc_config.debug,
                 step=step,
+                optimality_criterion=optimality_criterion,
+                optimality_target=soc_config.optimality_target,
             )
             if wandb_run is not None:
                 log_payload: Dict[str, Any] = {"eval/iteration": step + 1}

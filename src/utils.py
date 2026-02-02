@@ -65,6 +65,8 @@ def generate_and_plot_samples(
     control_agents,
     aggregator,
     sde,
+    optimality_criterion,
+    optimality_target,
     image_dim = (1, 28, 28),
     sample_batch_size: int = 64,
     num_steps: int = 500,
@@ -94,6 +96,8 @@ def generate_and_plot_samples(
         device=device,
         eps=eps,
         debug=debug,
+        optimality_criterion=optimality_criterion,
+        optimality_target=optimality_target,
     )
 
     if debug:

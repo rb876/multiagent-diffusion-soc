@@ -4,6 +4,8 @@ from typing import Any, Callable, Dict, Mapping, MutableMapping, Union
 
 from src.models.cnet import ClassifierModel
 from src.models.unet import UNetModel
+from src.models.cond_unet import CondUNetModel
+
 
 
 ModelFactory = Callable[..., Any]
@@ -12,6 +14,7 @@ ModelFactory = Callable[..., Any]
 class ModelName(str, Enum):
     CNET = "cnet"
     UNET = "unet"
+    COND_UNET = "cond_unet"
 
 
 @dataclass(frozen=True)
@@ -28,10 +31,14 @@ def _cnet_factory(**kwargs: Any) -> Any:
 def _unet_factory(**kwargs: Any) -> Any:
     return UNetModel(**kwargs)
 
+def _cond_unet_factory(**kwargs: Any) -> Any:
+    return CondUNetModel(**kwargs)
+
 
 _MODEL_REGISTRY: MutableMapping[ModelName, ModelConfig] = {
     ModelName.CNET: ModelConfig(factory=_cnet_factory),
     ModelName.UNET: ModelConfig(factory=_unet_factory, required_kwargs=("marginal_prob_std",)),
+    ModelName.COND_UNET: ModelConfig(factory=_cond_unet_factory),
 }
 
 

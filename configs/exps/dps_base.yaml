@@ -11,11 +11,11 @@ soc:
   num_control_agents: 2
   num_diffusion_steps: 500
   path_to_classifier_checkpoint: checkpoints/cnet.pt
-  path_to_score_model_checkpoint: checkpoints/ve/latest.ckpt
+  path_to_score_model_checkpoint: checkpoints/vp/latest.ckpt
   eval_batch_size: 64
   optimality_target: 0
   sample_num_steps: 500
-  guidance_scale: 1000.0
+  guidance_scale: 100.0
   aggregator:
     mask_name: split 
     use_overlap: false
@@ -25,7 +25,7 @@ soc:
     name: classifier_ce_with_cooperation
 
 sde:
-  name: VE
+  name: VP
 
 wandb:
   project: soc-agent-diffusion
