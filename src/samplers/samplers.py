@@ -86,9 +86,6 @@ def euler_maruyama_sampler(
     return mean_x
 
 
-
-import torch
-
 def euler_maruyama_controlled_sampler(
     score_model,
     control_agents,
@@ -170,7 +167,7 @@ def euler_maruyama_controlled_sampler(
                                 if enable_optimality_loss_on_processes
                                 else None
                             ),
-                        ).sum()
+                        )
 
                         grad_input = torch.autograd.grad(loss, x0_guidance, create_graph=False)[0].detach()
                 else:
@@ -274,7 +271,7 @@ def euler_maruyama_dps_sampler(
             }
 
             Y0_hat = aggregator([x0_hats[k] for k in agent_keys])
-            loglik_scalar = optimality_loss.get_running_state_loss(Y0_hat, target, processes = [x0_hats[k] for k in agent_keys])
+            loglik_scalar = optimality_loss.get_running_state_loss(Y0_hat, target, processes = None)
             grads = torch.autograd.grad(
                 outputs=loglik_scalar,
                 inputs=[states[k] for k in agent_keys],

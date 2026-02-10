@@ -35,7 +35,7 @@ class SeamContinuityLoss(nn.Module):
         self,
         mask: torch.Tensor,          # (P,C,H,W)
         seam_weight: float = 1.0,
-        grad_weight: float = 0.25,
+        grad_weight: float = 0.05,
         lap_weight: float = 0.0,
         use_charbonnier: bool = True,
         eps: float = 1e-3,

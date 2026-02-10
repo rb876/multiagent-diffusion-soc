@@ -22,7 +22,6 @@ def get_optimality_criterion(
             **kwargs
         )
     elif name == "classifier_ce_and_smoothness":  # no seam continuity # this loss is used when the mask is average
-        from src.envs.optimality import ClassifierCEWithAlignmentOrCooperation
         assert aggregator.mask_name == "average", "Only 'average' mask is supported for smoothness loss."
         assert aggregator.num_processes >= 2, "At least 2 processes are required for smoothness loss."
         assert not aggregator.use_overlap, "Overlap masks are not supported for smoothness loss."
@@ -34,7 +33,6 @@ def get_optimality_criterion(
             **kwargs
         )
     elif name == "classifier_ce_and_consistency":  # no seam continuity # this loss is used when the mask is average
-        from src.envs.optimality import ClassifierCEWithAlignmentOrCooperation
         assert aggregator.mask_name == "average", "Only 'average' mask is supported for consistency loss."
         assert aggregator.num_processes >= 2, "At least 2 processes are required for consistency loss."
         assert not aggregator.use_overlap, "Overlap masks are not supported for consistency loss."

@@ -175,6 +175,7 @@ def main(cfg: DictConfig) -> None:
                 step=step,
                 optimality_criterion=optimality_criterion,
                 optimality_target=soc_config.optimality_target,
+                enable_optimality_loss_on_processes=soc_config.enable_optimality_loss_on_processes,
             )
             if wandb_run is not None:
                 log_payload: Dict[str, Any] = {"eval/iteration": step + 1}

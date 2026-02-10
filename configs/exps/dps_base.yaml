@@ -14,7 +14,7 @@ soc:
   path_to_score_model_checkpoint: checkpoints/vp/latest.ckpt
   eval_batch_size: 64
   optimality_target: 0
-  sample_num_steps: 500
+  sample_num_steps: 100
   guidance_scale: 100.0
   aggregator:
     mask_name: split 

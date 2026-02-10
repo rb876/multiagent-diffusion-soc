@@ -1,0 +1,19 @@
+controls:
+  agent_3:
+    fictitious:
+      digit_9: "/home/rbarbano/home/git/multi-agent-diffusion-working-repo/multirun/2026-02-02/23-35-28/0/weights"
+      digit_3: "/home/rbarbano/home/git/multi-agent-diffusion-working-repo/multirun/2026-02-03/04-23-26/0/weights"
+      digit_0: "/home/rbarbano/home/git/multi-agent-diffusion-working-repo/multirun/2026-02-03/08-13-10/0/weights"
+    joint:
+      digit_9: "/home/rbarbano/home/git/multi-agent-diffusion-working-repo/multirun/2026-02-03/11-27-12/0/weights"
+      digit_3: "/home/rbarbano/home/git/multi-agent-diffusion-working-repo/multirun/2026-02-03/12-29-15/0/weights"
+      digit_0: "/home/rbarbano/home/git/multi-agent-diffusion-working-repo/multirun/2026-02-03/13-54-25/0/weights"
+  agent_2:
+    fictitious:
+      digit_9: "/home/rbarbano/home/git/multi-agent-diffusion-working-repo/multirun/2026-02-02/23-36-08/0/weights"
+      digit_3: "/home/rbarbano/home/git/multi-agent-diffusion-working-repo/multirun/2026-02-03/02-23-27/0/weights"
+      digit_0: "/home/rbarbano/home/git/multi-agent-diffusion-working-repo/multirun/2026-02-03/03-19-14/0/weights"
+    joint:
+      digit_9: "/home/rbarbano/home/git/multi-agent-diffusion-working-repo/multirun/2026-02-03/05-10-25/0/weights"
+      digit_3: "/home/rbarbano/home/git/multi-agent-diffusion-working-repo/multirun/2026-02-03/06-32-51/0/weights"
+      digit_0: "/home/rbarbano/home/git/multi-agent-diffusion-working-repo/multirun/2026-02-03/07-00-24/0/weights"

@@ -23,7 +23,7 @@ soc:
   sample_num_steps: 500
   optimality_target: 0
   train_num_steps: 25
-  enable_optimality_loss_on_processes: true
+  enable_optimality_loss_on_processes: false
   aggregator:
     mask_name: split
     use_overlap: false
