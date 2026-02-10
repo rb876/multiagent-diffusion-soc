@@ -3,6 +3,7 @@ import torch
 from collections import defaultdict
 from src.trainer.utils import compute_grad_norms
 from src.samplers.diff_dyms import get_tweedy_estimate
+from src.guidance import compute_vectorized_guidance_grads
 
 
 def train_control_bptt(
@@ -101,21 +102,22 @@ def train_control_bptt(
 
         # Compute controls for all agents.
         controls = {}
+        grad_inputs = {}
+        if running_state_cost_scaling > 0:
+            grad_inputs = compute_vectorized_guidance_grads(
+                x0_hats=x0_hats,
+                agent_keys=agent_keys,
+                aggregator=aggregator,
+                optimality_criterion=optimality_criterion,
+                optimality_target=optimality_target,
+            )
+
         for key in agent_keys:
-            if running_state_cost_scaling > 0:
-                with torch.enable_grad():
-                    x0_guidance = x0_hats[key].detach().requires_grad_(True)
-                    Y0_hat_guidance = aggregator([
-                        x0_guidance if kk == key else x0_hats[kk].detach()
-                        for kk in agent_keys
-                    ])
-                    loss = optimality_criterion.get_running_state_loss(
-                        Y0_hat_guidance,
-                        optimality_target,
-                    )
-                    grad_input = torch.autograd.grad(loss, x0_guidance, create_graph=False)[0].detach()
-            else:
-                grad_input = torch.zeros_like(system_states[key])
+            grad_input = (
+                grad_inputs[key]
+                if running_state_cost_scaling > 0
+                else torch.zeros_like(system_states[key])
+            )
 
             control_input = torch.cat([system_states[key], Y_t, grad_input], dim=1)
             controls[key] = control_agents[key](control_input, batch_time_step)
@@ -257,22 +259,23 @@ def fictitious_train_control_bptt(
                 cumulative_optimality_loss += optimality_criterion.get_running_state_loss(
                     Y_0_hat, optimality_target) * step_size
 
+            grad_inputs = {}
+            if running_state_cost_scaling > 0:
+                grad_inputs = compute_vectorized_guidance_grads(
+                    x0_hats=x0_hats,
+                    agent_keys=agent_keys,
+                    aggregator=aggregator,
+                    optimality_criterion=optimality_criterion,
+                    optimality_target=optimality_target,
+                )
+
             controls = {}
             for key in agent_keys:
-                if running_state_cost_scaling > 0:
-                    with torch.enable_grad():
-                        x0_guidance = x0_hats[key].detach().requires_grad_(True)
-                        Y0_hat_guidance = aggregator([
-                            x0_guidance if kk == key else x0_hats[kk].detach()
-                            for kk in agent_keys
-                        ])
-                        loss = optimality_criterion.get_running_state_loss(
-                            Y0_hat_guidance,
-                            optimality_target,
-                        )
-                        grad_input = torch.autograd.grad(loss, x0_guidance, create_graph=False)[0].detach()
-                else:
-                    grad_input = torch.zeros_like(agent_states[key])                
+                grad_input = (
+                    grad_inputs[key]
+                    if running_state_cost_scaling > 0
+                    else torch.zeros_like(agent_states[key])
+                )
                 
                 control_input = torch.cat([agent_states[key], Y_t, grad_input], dim=1)
                 if key == player_key:
