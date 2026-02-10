@@ -70,7 +70,6 @@ def main(cfg: DictConfig) -> None:
     # Freezes the model’s parameters so they don’t get gradients or updates. 
     # It does not stop autograd from building a graph or computing gradients with respect to other tensors.
     _load_state(score_model, soc_config.path_to_score_model_checkpoint, device)
-
     # Load classifier.
     classifier_cfg = OmegaConf.to_container(cfg.exps.classifier_model, resolve=True)
     classifier_name = classifier_cfg.pop("name")
@@ -80,7 +79,6 @@ def main(cfg: DictConfig) -> None:
     ).to(device)
     classifier.eval()
     _load_state(classifier, soc_config.path_to_classifier_checkpoint, device)
-
     # Initialize the aggregator.
     aggregator_cfg = soc_config.aggregator
     aggregator = ImageMaskAggregator(

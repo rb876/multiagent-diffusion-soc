@@ -98,12 +98,12 @@ def euler_maruyama_controlled_sampler(
     eps=1e-3,
     debug: bool = False,
     debug_dir=None,
-    save_debug_info=True,
+    save_debug_info=False,
     use_grad_guidance: bool = True,          # include grad channel like in training
     optimality_criterion=None,               # needed if use_grad_guidance=True
     optimality_target=None,                  # needed if use_grad_guidance=True
-    enable_optimality_loss_on_processes=True,
-):
+    ):
+
     agent_keys = sorted(control_agents.keys())
     if not agent_keys:
         raise ValueError("No control agents provided to controlled sampler.")
@@ -162,11 +162,6 @@ def euler_maruyama_controlled_sampler(
                         loss = optimality_criterion.get_running_state_loss(
                             Y0_hat_guidance,
                             optimality_target,
-                            processes=(
-                                [x0_guidance if kk == key else x0_hats[kk].detach() for kk in agent_keys]
-                                if enable_optimality_loss_on_processes
-                                else None
-                            ),
                         )
 
                         grad_input = torch.autograd.grad(loss, x0_guidance, create_graph=False)[0].detach()

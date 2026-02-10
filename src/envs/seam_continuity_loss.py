@@ -105,21 +105,10 @@ class SeamContinuityLoss(nn.Module):
 
     def forward(
         self,
-        y: torch.Tensor,                               # (B,C,H,W) aggregated
-        processes: Optional[Sequence[torch.Tensor]] = None,  # length P, each (B,C,H,W)
+        y: torch.Tensor, # (B,C,H,W) aggregated
     ) -> torch.Tensor:
-        if processes is None:
-            # Alignment mode: enforce continuity across seams within Y itself
-            loss = torch.zeros((), device=y.device, dtype=y.dtype)
-            for (row_top, row_bot) in self._seams:
-                loss = loss + self._seam_loss_between_rows(y, row_top, y, row_bot)
-            return loss
-
-        # Coupling mode: enforce continuity across seams between adjacent processes
-        if len(processes) != self.mask.shape[0]:
-            raise ValueError(f"Expected {self.mask.shape[0]} processes, got {len(processes)}")
-
+        # alignment mode: enforce continuity across seams within Y itself.
         loss = torch.zeros((), device=y.device, dtype=y.dtype)
-        for p, (row_p, row_q) in enumerate(self._seams):
-            loss = loss + self._seam_loss_between_rows(processes[p], row_p, processes[p + 1], row_q)
+        for (row_top, row_bot) in self._seams:
+            loss = loss + self._seam_loss_between_rows(y, row_top, y, row_bot)
         return loss

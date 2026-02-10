@@ -16,7 +16,6 @@ from src.envs.registry import get_optimality_criterion
 from src.models.registry import get_model_by_name
 from src.samplers.diff_dyms import SDE
 from src.trainer.soc_bptt_ft import fictitious_train_control_bptt
-from src.trainer.soc_adjoint_fict_ft import fictitious_train_control_adjoint
 from src.utils import generate_and_plot_samples, save_control_agents
 
 
@@ -60,8 +59,7 @@ def main(cfg: DictConfig) -> None:
     score_model.eval()
     score_model.requires_grad_(False)
     _load_state(score_model, soc_config.path_to_score_model_checkpoint, device)
-
-    # Load classifier
+    # Load classifier.
     classifier_cfg = OmegaConf.to_container(cfg.exps.classifier_model, resolve=True)
     classifier_name = classifier_cfg.pop("name")
     classifier = get_model_by_name(
@@ -70,8 +68,7 @@ def main(cfg: DictConfig) -> None:
     ).to(device)
     classifier.eval()
     _load_state(classifier, soc_config.path_to_classifier_checkpoint, device)
-
-    # Initialize control nets
+    # Initialize control nets.
     control_cfg = OmegaConf.to_container(cfg.exps.control_net_model, resolve=True)
     control_name = control_cfg.pop("name")
     control_agents = {}
@@ -80,8 +77,7 @@ def main(cfg: DictConfig) -> None:
             control_name, marginal_prob_std=sde.marginal_prob_std, **control_cfg
         ).to(device)
         control_agents[i].train()
-
-    # Initialize the aggregator
+    # Initialize the aggregator.
     aggregator_cfg = soc_config.aggregator
     aggregator = ImageMaskAggregator(
         img_dims=tuple(cfg.exps.data.loader.img_size),
@@ -89,18 +85,14 @@ def main(cfg: DictConfig) -> None:
         device=device, 
         **aggregator_cfg
     )
-
     optimality_criterion = get_optimality_criterion(
         name=soc_config.optimality_criterion.name, 
         classifier=classifier, 
         aggregator=aggregator,
     ).to(device)
-
-    # Select training method
+    # Select training method.
     if soc_config.method == "bptt":
         train_soc_fn = fictitious_train_control_bptt
-    elif soc_config.method == "adjoint":
-        train_soc_fn = fictitious_train_control_adjoint
     else:
         raise ValueError(f"Unknown training method: {soc_config.method}")
     from tqdm.auto import tqdm
@@ -114,7 +106,6 @@ def main(cfg: DictConfig) -> None:
             control_agents=control_agents,
             debug=soc_config.debug,
             device=device,
-            enable_optimality_loss_on_processes=soc_config.enable_optimality_loss_on_processes,
             eps=soc_config.eps,
             image_dim=tuple(cfg.exps.data.loader.img_size),
             inner_iters=soc_config.inner_iters,
@@ -138,7 +129,6 @@ def main(cfg: DictConfig) -> None:
             for idx, loss in enumerate(losses, start=1)
         }
         total_val = sum(control_losses.values())
-
         postfix_payload = {"total": f"{total_val:.4f}"}
         postfix_payload.update({name: f"{value:.4f}" for name, value in control_losses.items()})
         pbar.set_postfix(**postfix_payload)
@@ -175,7 +165,6 @@ def main(cfg: DictConfig) -> None:
                 step=step,
                 optimality_criterion=optimality_criterion,
                 optimality_target=soc_config.optimality_target,
-                enable_optimality_loss_on_processes=soc_config.enable_optimality_loss_on_processes,
             )
             if wandb_run is not None:
                 log_payload: Dict[str, Any] = {"eval/iteration": step + 1}
