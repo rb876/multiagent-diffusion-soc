@@ -153,17 +153,14 @@ def euler_maruyama_controlled_sampler(
                     # guidance gradient w.r.t. x0_hat (no extra score forward)
                     with torch.enable_grad():
                         x0_guidance = x0_hats[key].detach().requires_grad_(True)
-
                         Y0_hat_guidance = aggregator([
                             x0_guidance if kk == key else x0_hats[kk].detach()
                             for kk in agent_keys
                         ])
-
                         loss = optimality_criterion.get_running_state_loss(
                             Y0_hat_guidance,
                             optimality_target,
                         )
-
                         grad_input = torch.autograd.grad(loss, x0_guidance, create_graph=False)[0].detach()
                 else:
                     grad_input = torch.zeros_like(states[key])

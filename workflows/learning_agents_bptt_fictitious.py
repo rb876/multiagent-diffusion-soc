@@ -70,11 +70,13 @@ def main(cfg: DictConfig) -> None:
     _load_state(classifier, soc_config.path_to_classifier_checkpoint, device)
     # Initialize control nets.
     control_cfg = OmegaConf.to_container(cfg.exps.control_net_model, resolve=True)
-    control_name = control_cfg.pop("name")
+    control_arch_type = control_cfg.pop("name")
     control_agents = {}
     for i in range(soc_config.num_control_agents):
+        if control_arch_type != "cond_unet":
+            raise ValueError(f"Only 'cond_unet' control architecture is currently supported, got {control_arch_type}")
         control_agents[i] = get_model_by_name(
-            control_name, marginal_prob_std=sde.marginal_prob_std, **control_cfg
+            control_arch_type, marginal_prob_std=sde.marginal_prob_std, **control_cfg
         ).to(device)
         control_agents[i].train()
     # Initialize the aggregator.
