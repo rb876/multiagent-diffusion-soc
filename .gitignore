@@ -220,3 +220,6 @@ multirun/
 *.pt
 *.npz
 *.png
+*.npy
+*.jpg
+*.jpeg

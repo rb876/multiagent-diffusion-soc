@@ -5,13 +5,12 @@ defaults:
 
 training:
   device: cuda
-  sigma: 25.0
-  evaluate_every: 1
+  evaluate_every: 10
   eval_batch_size: 64
   eval_num_steps: 500
   ema_decay: 0.999
   learning_rate: 1.0e-4
-  num_epochs: 10
+  num_epochs: 100
   load_checkpoint: false
   path_to_checkpoint: null
   checkpoint_every: 10
@@ -27,3 +26,5 @@ training:
     name: null
     step_on: CosineAnnealingLR
     params: {}
+  sde: 
+    name: VE

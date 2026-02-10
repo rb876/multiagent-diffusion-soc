@@ -48,6 +48,22 @@
 
         },
         {
+            "name": "Python Debugger: Learning Agents BPTT Evaluation VP ",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "workflows.learning_agents_bptt",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "args": [
+                "--config-path",
+                "../configs",
+                "--config-name",
+                "exps/bptt_learning_agents_fine_tuning", 
+                "exps.sde.name=VP",
+                "exps.soc.path_to_score_model_checkpoint=checkpoints/vp/latest.ckpt"
+            ]
+        },
+        {
             "name": "Python Debugger: Learning Agents Adjoint Evaluation",
             "type": "debugpy",
             "request": "launch",
@@ -89,6 +105,21 @@
                 "../configs",
                 "--config-name",
                 "exps/fictitious_adjoint_learning_agents_fine_tuning"
+            ]
+
+        },
+        {
+            "name": "Python Debugger: DPS",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "workflows.dps_base",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "args": [
+                "--config-path",
+                "../configs",
+                "--config-name",
+                "exps/dps_base"
             ]
 
         },

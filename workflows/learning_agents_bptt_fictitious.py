@@ -49,7 +49,7 @@ def main(cfg: DictConfig) -> None:
             wandb_run.config.update(OmegaConf.to_container(cfg, resolve=True), allow_val_change=True)
 
     # Load score model, classifier, and control nets
-    sde = SDE(mode= cfg.exps.sde.name, sigma=cfg.exps.sde.sigma, device=device)
+    sde = SDE(mode=cfg.exps.sde.name, device=device)
     score_model_cfg = OmegaConf.to_container(cfg.exps.score_model, resolve=True)
     score_model_name = score_model_cfg.pop("name")
     score_model = get_model_by_name(
@@ -173,6 +173,9 @@ def main(cfg: DictConfig) -> None:
                 device=str(device),
                 debug=soc_config.debug,
                 step=step,
+                optimality_criterion=optimality_criterion,
+                optimality_target=soc_config.optimality_target,
+                enable_optimality_loss_on_processes=soc_config.enable_optimality_loss_on_processes,
             )
             if wandb_run is not None:
                 log_payload: Dict[str, Any] = {"eval/iteration": step + 1}

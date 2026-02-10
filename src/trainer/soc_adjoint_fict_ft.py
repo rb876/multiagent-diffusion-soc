@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 import torchsde
 
+from src.samplers.diff_dyms import get_tweedy_estimate
+
 class MultiAgentControlledSDE(nn.Module):
     def __init__(self,     
         score_model,
@@ -67,7 +69,6 @@ class MultiAgentControlledSDE(nn.Module):
         g_sq = (g ** 2).view(B, 1, 1, 1)
 
         Y_t = self.aggregator([states[k] for k in self.agent_keys])
-        current_std = self.sde.marginal_prob_std(batch_time).view(B, 1, 1, 1)
 
         controls, scores, x0_hats = {}, {}, {}
         for k in self.agent_keys:
@@ -79,11 +80,13 @@ class MultiAgentControlledSDE(nn.Module):
 
             controls[k] = u
             scores[k] = s
-            x0_hats[k] = x + (current_std ** 2) * s
+            x0_hats[k] = get_tweedy_estimate(self.sde, x, batch_time, s)
 
         Y0_hat = self.aggregator([x0_hats[k] for k in self.agent_keys])
         run_vals = self.optimality_criterion.get_running_state_loss(
-            Y0_hat, self.optimality_target, processes=[x0_hats[key] for key in self.agent_keys] if self.enable_optimality_loss_on_processes else None
+            Y0_hat,
+            self.optimality_target,
+            processes=[x0_hats[key] for key in self.agent_keys] if self.enable_optimality_loss_on_processes else None
         )
 
         if run_vals.numel() == 1:
@@ -95,7 +98,7 @@ class MultiAgentControlledSDE(nn.Module):
         active_u = controls[self.active_agent_key].view(B, -1)
         dc_ctrl = active_u.pow(2).mean(dim=1, keepdim=True)
 
-        drift_states = {k: g_sq * scores[k] + controls[k] for k in self.agent_keys}
+        drift_states = {k: - self.sde.f(states[k], batch_time) + g_sq * scores[k] + g[:, None, None, None] * controls[k] for k in self.agent_keys}
         return self._pack_state(drift_states, dc_ctrl, dc_opt)
 
     def g(self, t, y):

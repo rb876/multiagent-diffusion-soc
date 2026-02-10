@@ -11,4 +11,3 @@ training:
 
 sde:
   name: VE
-  sigma: 25.0

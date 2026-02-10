@@ -9,20 +9,20 @@ soc:
   method: bptt
   batch_size: 16
   eps: 1e-3
-  eval_every: 100
+  eval_every: 200
   iters: 1000
   lambda_reg: 1.0
   learning_rate: 1e-4
   num_control_agents: 2
   num_diffusion_steps: 500
   path_to_classifier_checkpoint: checkpoints/cnet.pt
-  path_to_score_model_checkpoint: checkpoints/latest.ckpt
+  path_to_score_model_checkpoint: checkpoints/ve/latest.ckpt
   running_state_cost_scaling: 1.0
   sample_batch_size: 64
   optimality_target: 0
   train_num_steps: 25
   sample_num_steps: 500
-  enable_optimality_loss_on_processes: true
+  enable_optimality_loss_on_processes: false
   aggregator:
     mask_name: split 
     use_overlap: false
@@ -34,7 +34,6 @@ soc:
 
 sde:
   name: VE
-  sigma: 25.0
 
 wandb:
   project: soc-agent-diffusion

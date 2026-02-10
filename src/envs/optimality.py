@@ -40,9 +40,7 @@ class ClassifierCEWithAlignmentOrCooperation(nn.Module):
 
     def _ce(self, y: torch.Tensor, target_label: int) -> torch.Tensor:
         logits = self.classifier(y)
-        B = logits.shape[0]
-        target = torch.full((B,), int(target_label), device=logits.device, dtype=torch.long)
-        return F.cross_entropy(logits, target, reduction=self.reduction)
+        return - F.log_softmax(logits, dim=-1)[:, target_label].mean()
 
     def loss(self, y: torch.Tensor, target_labels: list[int], processes: Optional[Sequence[torch.Tensor]] = None) -> torch.Tensor:
         return self._ce(y, target_labels) + self.seam_loss(y, processes=processes)
