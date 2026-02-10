@@ -6,10 +6,7 @@ from src.models.cnet import ClassifierModel
 from src.models.unet import UNetModel
 from src.models.cond_unet import CondUNetModel
 
-
-
 ModelFactory = Callable[..., Any]
-
 
 class ModelName(str, Enum):
     CNET = "cnet"
@@ -33,7 +30,6 @@ def _unet_factory(**kwargs: Any) -> Any:
 
 def _cond_unet_factory(**kwargs: Any) -> Any:
     return CondUNetModel(**kwargs)
-
 
 _MODEL_REGISTRY: MutableMapping[ModelName, ModelConfig] = {
     ModelName.CNET: ModelConfig(factory=_cnet_factory),

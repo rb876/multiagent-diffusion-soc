@@ -13,7 +13,6 @@ from src.envs.aggregator import ImageMaskAggregator
 from src.envs.registry import get_optimality_criterion
 from src.models.registry import get_model_by_name
 from src.samplers.diff_dyms import SDE
-from src.trainer.soc_adjoint_ft import train_control_adjoint
 from src.trainer.soc_bptt_ft import train_control_bptt
 from src.utils import generate_and_plot_samples, save_control_agents
 
@@ -45,7 +44,6 @@ def main(cfg: DictConfig) -> None:
             wandb_kwargs = {k: v for k, v in wandb_dict.items() if v not in (None, "", [], {})}
             wandb_run = wandb_module.init(**wandb_kwargs)
             wandb_run.config.update(OmegaConf.to_container(cfg, resolve=True), allow_val_change=True)
-
     # Load score model, classifier, and control nets.
     sde = SDE(mode=cfg.exps.sde.name, device=device)
     score_model_cfg = OmegaConf.to_container(cfg.exps.score_model, resolve=True)
@@ -60,7 +58,6 @@ def main(cfg: DictConfig) -> None:
     # It does not stop autograd from building a graph or computing gradients with respect to other tensors.
     score_model.requires_grad_(False)
     _load_state(score_model, soc_config.path_to_score_model_checkpoint, device)
-
     # Load classifier.
     classifier_cfg = OmegaConf.to_container(cfg.exps.classifier_model, resolve=True)
     classifier_name = classifier_cfg.pop("name")
@@ -70,25 +67,23 @@ def main(cfg: DictConfig) -> None:
     ).to(device)
     classifier.eval()
     _load_state(classifier, soc_config.path_to_classifier_checkpoint, device)
-
-    # Initialize control nets
+    # Initialize control nets.
     control_cfg = OmegaConf.to_container(cfg.exps.control_net_model, resolve=True)
-    control_name = control_cfg.pop("name")
-
+    control_arch_type = control_cfg.pop("name")
     control_agents = {}
     for i in range(soc_config.num_control_agents):
+        if control_arch_type != "cond_unet":
+            raise ValueError(f"Only 'cond_unet' control architecture is currently supported, got {control_arch_type}")
         control_agents[i] = get_model_by_name(
-            control_name, 
+            control_arch_type, 
             **control_cfg
         ).to(device)
         control_agents[i].train()
-
     control_parameters = [param for net in control_agents.values() for param in net.parameters()]
     optimizer = torch.optim.Adam(
         control_parameters,
         lr=soc_config.learning_rate
     )
-
     # Initialize the aggregator.
     aggregator_cfg = soc_config.aggregator
     aggregator = ImageMaskAggregator(
@@ -103,14 +98,12 @@ def main(cfg: DictConfig) -> None:
         classifier=classifier,
         aggregator=aggregator,
     ).to(device)
-
-    # Select training method
+    # Select training method.
     if soc_config.method == "bptt":
         train_soc_fn = train_control_bptt
-    elif soc_config.method == "adjoint":
-        train_soc_fn = train_control_adjoint
     else:
         raise ValueError(f"Unknown training method: {soc_config.method}")
+
     from tqdm.auto import tqdm
     pbar = tqdm(range(soc_config.iters), desc="Training control policy")
     for step in pbar:
@@ -120,7 +113,6 @@ def main(cfg: DictConfig) -> None:
             control_agents=control_agents,
             debug=soc_config.debug,
             device=device,
-            enable_optimality_loss_on_processes=soc_config.enable_optimality_loss_on_processes,
             eps=soc_config.eps,
             image_dim=tuple(cfg.exps.data.loader.img_size),
             lambda_reg=soc_config.lambda_reg,
@@ -171,7 +163,6 @@ def main(cfg: DictConfig) -> None:
                 step=step,
                 optimality_criterion=optimality_criterion,
                 optimality_target=soc_config.optimality_target,
-                enable_optimality_loss_on_processes=soc_config.enable_optimality_loss_on_processes,
             )
             if wandb_run is not None:
                 log_payload: Dict[str, Any] = {"eval/iteration": step + 1}

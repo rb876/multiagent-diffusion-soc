@@ -11,6 +11,9 @@
             "module": "workflows.score_model_train",
             "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0"
+            },
             "args": [
                 "--config-path",
                 "../configs",
@@ -25,86 +28,48 @@
             "module": "workflows.classifier_trainer",
             "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0"
+            },
             "args": [
                 "--config-path",
                 "../configs",
                 "--config-name",
                 "exps/mnist_classifier_training"
             ]
-        }, 
-        {
-            "name": "Python Debugger: Learning Agents BPTT Evaluation",
-            "type": "debugpy",
-            "request": "launch",
-            "module": "workflows.learning_agents_bptt",
-            "cwd": "${workspaceFolder}",
-            "console": "integratedTerminal",
-            "args": [
-                "--config-path",
-                "../configs",
-                "--config-name",
-                "exps/bptt_learning_agents_fine_tuning"
-            ]
-
         },
         {
-            "name": "Python Debugger: Learning Agents BPTT Evaluation VP ",
+            "name": "Python Debugger: Learning Agents BPTT Evaluation VP",
             "type": "debugpy",
             "request": "launch",
             "module": "workflows.learning_agents_bptt",
             "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0"
+            },
             "args": [
                 "--config-path",
                 "../configs",
                 "--config-name",
-                "exps/bptt_learning_agents_fine_tuning", 
-                "exps.sde.name=VP",
-                "exps.soc.path_to_score_model_checkpoint=checkpoints/vp/latest.ckpt"
+                "exps/bptt_learning_agents_fine_tuning",
             ]
         },
         {
-            "name": "Python Debugger: Learning Agents Adjoint Evaluation",
-            "type": "debugpy",
-            "request": "launch",
-            "module": "workflows.learning_agents_bptt",
-            "cwd": "${workspaceFolder}",
-            "console": "integratedTerminal",
-            "args": [
-                "--config-path",
-                "../configs",
-                "--config-name",
-                "exps/adjoint_learning_agents_fine_tuning"
-            ]
-
-        }, 
-        {
-            "name": "Python Debugger: Learning Agents Fictitious BPTT Evaluation",
+            "name": "Python Debugger: Learning Agents Fictitious BPTT Evaluation VP",
             "type": "debugpy",
             "request": "launch",
             "module": "workflows.learning_agents_bptt_fictitious",
             "cwd": "${workspaceFolder}",
-            "console": "integratedTerminal",
+            "console": "integratedTerminal",            
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0"
+            },
             "args": [
                 "--config-path",
                 "../configs",
                 "--config-name",
-                "exps/fictitious_bptt_learning_agents_fine_tuning"
-            ]
-
-        },        
-        {
-            "name": "Python Debugger: Learning Agents Fictitious Adjoint Evaluation",
-            "type": "debugpy",
-            "request": "launch",
-            "module": "workflows.learning_agents_bptt_fictitious",
-            "cwd": "${workspaceFolder}",
-            "console": "integratedTerminal",
-            "args": [
-                "--config-path",
-                "../configs",
-                "--config-name",
-                "exps/fictitious_adjoint_learning_agents_fine_tuning"
+                "exps/fictitious_bptt_learning_agents_fine_tuning",
             ]
 
         },
@@ -115,13 +80,15 @@
             "module": "workflows.dps_base",
             "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0"
+            },
             "args": [
                 "--config-path",
                 "../configs",
                 "--config-name",
                 "exps/dps_base"
             ]
-
         },
         {
             "name": "Python Debugger: Display Aggregator",
@@ -129,15 +96,10 @@
             "request": "launch",
             "module": "viz._aggregator",
             "cwd": "${workspaceFolder}",
-            "console": "integratedTerminal"
+            "console": "integratedTerminal",
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0"
+            }
         },
-        {
-            "name": "Python Debugger: Display Seam Continuity Loss",
-            "type": "debugpy",
-            "request": "launch",
-            "module": "viz._seam_cont_loss",
-            "cwd": "${workspaceFolder}",
-            "console": "integratedTerminal"
-        }
     ]
 }

@@ -1,0 +1,49 @@
+{
+  "meta": {
+    "root_dir": "/home/rbarbano/home/git/multi-agent-diffusion-working-repo/multirun",
+    "start_date": "2026-02-03",
+    "end_date": "2026-02-03",
+    "required_fixed": {
+      "exps.sde.name": "VP"
+    },
+    "filters": {
+      "target_filter": [
+        "3"
+      ],
+      "lambda_reg_filter": [
+        "10.0"
+      ],
+      "running_state_cost_scaling_filter": [
+        "1.0"
+      ],
+      "agents_filter": [
+        "3"
+      ],
+      "config_name_filter": null
+    },
+    "num_matches": 2,
+    "generated_at": "2026-02-03T18:56:17"
+  },
+  "runs": {
+    "3": {
+      "3": {
+        "exps/fictitious_bptt_learning_agents_fine_tuning": [
+          {
+            "run_dir": "/home/rbarbano/home/git/multi-agent-diffusion-working-repo/multirun/2026-02-03/03-26-15/0",
+            "run_date": "2026-02-03",
+            "lambda_reg": "10.0",
+            "running_state_cost_scaling": "1.0"
+          }
+        ],
+        "exps/bptt_learning_agents_fine_tuning": [
+          {
+            "run_dir": "/home/rbarbano/home/git/multi-agent-diffusion-working-repo/multirun/2026-02-03/12-29-15/0",
+            "run_date": "2026-02-03",
+            "lambda_reg": "10.0",
+            "running_state_cost_scaling": "1.0"
+          }
+        ]
+      }
+    }
+  }
+}

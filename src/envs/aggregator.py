@@ -69,9 +69,9 @@ class ImageMaskAggregator:
                     use_overlap=self.use_overlap,
                 )  # (P, C, H, W)
             elif self.mask_name == "average":
-                return torch.ones((self.num_processes, *self.img_dims), device=self.device) / self.num_processes
+                raise NotImplementedError("Average masks not implemented.")
             elif self.mask_name == "random":
-                raise NotImplementedError("random masks not implemented.")
+                raise NotImplementedError("Random masks not implemented.")
             else:
                 raise ValueError(f"Unknown mask name: {self.mask_name}")
 

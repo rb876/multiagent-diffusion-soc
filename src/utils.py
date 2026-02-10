@@ -74,7 +74,6 @@ def generate_and_plot_samples(
     eps: float = 1e-3,
     debug: bool = False,
     step: int = 0,
-    enable_optimality_loss_on_processes: bool = False,
 ):
     """Generate samples using controlled Euler-Maruyama. """
 
@@ -99,7 +98,6 @@ def generate_and_plot_samples(
         debug=debug,
         optimality_criterion=optimality_criterion,
         optimality_target=optimality_target,
-        enable_optimality_loss_on_processes=enable_optimality_loss_on_processes,
     )
 
     if debug:

@@ -7,6 +7,8 @@ import numpy as np
 import torch
 
 from src.samplers.diff_dyms import get_tweedy_estimate
+from src.guidance import compute_vectorized_guidance_grads
+
 
 def _save_debug_states(info_agg, info_per_agent, agent_keys, debug_dir=None, save_last_only=True):
     """Persist aggregated and per-agent states for offline inspection."""
@@ -98,12 +100,12 @@ def euler_maruyama_controlled_sampler(
     eps=1e-3,
     debug: bool = False,
     debug_dir=None,
-    save_debug_info=True,
+    save_debug_info=False,
     use_grad_guidance: bool = True,          # include grad channel like in training
     optimality_criterion=None,               # needed if use_grad_guidance=True
     optimality_target=None,                  # needed if use_grad_guidance=True
-    enable_optimality_loss_on_processes=True,
-):
+    ):
+
     agent_keys = sorted(control_agents.keys())
     if not agent_keys:
         raise ValueError("No control agents provided to controlled sampler.")
@@ -147,32 +149,23 @@ def euler_maruyama_controlled_sampler(
                 sigma2 = (sde.marginal_prob_std(batch_time_step) ** 2)[:, None, None, None]
                 x0_hats = {k: states[k] + sigma2 * scores[k] for k in agent_keys}
 
+            grad_inputs = {}
+            if use_grad_guidance:
+                grad_inputs = compute_vectorized_guidance_grads(
+                    x0_hats=x0_hats,
+                    agent_keys=agent_keys,
+                    aggregator=aggregator,
+                    optimality_criterion=optimality_criterion,
+                    optimality_target=optimality_target,
+                )
+
             controls = {}
             for key in agent_keys:
-                if use_grad_guidance:
-                    # guidance gradient w.r.t. x0_hat (no extra score forward)
-                    with torch.enable_grad():
-                        x0_guidance = x0_hats[key].detach().requires_grad_(True)
-
-                        Y0_hat_guidance = aggregator([
-                            x0_guidance if kk == key else x0_hats[kk].detach()
-                            for kk in agent_keys
-                        ])
-
-                        loss = optimality_criterion.get_running_state_loss(
-                            Y0_hat_guidance,
-                            optimality_target,
-                            processes=(
-                                [x0_guidance if kk == key else x0_hats[kk].detach() for kk in agent_keys]
-                                if enable_optimality_loss_on_processes
-                                else None
-                            ),
-                        )
-
-                        grad_input = torch.autograd.grad(loss, x0_guidance, create_graph=False)[0].detach()
-                else:
-                    grad_input = torch.zeros_like(states[key])
-
+                grad_input = (
+                    grad_inputs[key]
+                    if use_grad_guidance
+                    else torch.zeros_like(states[key])
+                )
                 control_input = torch.cat([states[key], Y_t, grad_input], dim=1)
                 controls[key] = control_agents[key](control_input, batch_time_step)
 
