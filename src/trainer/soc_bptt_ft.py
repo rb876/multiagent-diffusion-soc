@@ -127,7 +127,7 @@ def train_control_bptt(
         for key in agent_keys:
             # NOTE: I am negating as T goes from 1 to eps (reverse time) and the SDE is defined in forward time and the step is positive.
             drift_rev = - sde.f(system_states[key], batch_time_step) + g_sq * scores[key]  # reverse SDE drift term.
-            mean_state = system_states[key] + (drift_rev + g_noise * controls[key]) * step_size
+            mean_state = system_states[key] + (drift_rev + g_sq * controls[key]) * step_size
             # Update system state with Euler-Maruyama step.
             system_states[key] = mean_state + noise_scale * torch.randn_like(system_states[key])
             # Control energy (averaged over batch).
@@ -290,7 +290,7 @@ def fictitious_train_control_bptt(
             noise_scale = torch.sqrt(step_size) * g_noise
             for key in agent_keys:
                 drift_rev = - sde.f(agent_states[key], batch_time_step) + g_sq * scores[key]
-                mean_state = agent_states[key] + (drift_rev + g_noise * controls[key]) * step_size
+                mean_state = agent_states[key] + (drift_rev + g_sq * controls[key]) * step_size
                 if key == player_key:
                     agent_states[key] = mean_state + noise_scale * torch.randn_like(agent_states[key])
                 else:
