@@ -11,7 +11,7 @@ soc:
   eps: 1e-3
   eval_every: 100
   inner_iters: 5
-  lambda_reg: 1.0
+  lambda_reg: 1e-4
   learning_rate: 1e-4
   num_control_agents: 2
   num_diffusion_steps: 500
