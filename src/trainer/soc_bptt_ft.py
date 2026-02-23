@@ -1,4 +1,5 @@
 import torch
+import copy
 
 from collections import defaultdict
 from src.trainer.utils import compute_grad_norms
@@ -398,6 +399,9 @@ def fictitious_train_control_adjoint_matching(
         optimizer.zero_grad()
 
         time_steps = torch.linspace(1.0, eps, num_steps, device=device)
+        base_agent = copy.deepcopy(control_agents[player_key]).to(device)
+        base_agent.eval()
+        base_agent.requires_grad_(False)
         if len(time_steps) < 2:
             raise ValueError("num_steps must be at least 2 to compute a diffusion step.")
 
@@ -531,19 +535,22 @@ def fictitious_train_control_adjoint_matching(
 
             score_k = score_model(x_k, t_k)
             # Base field is the frozen pretrained reverse diffusion drift (no learned control).
-            base_drift_k = -sde.f(x_k, t_k) + g_k_sq * score_k
+            base_drift_k = -sde.f(x_k, t_k) + g_k_sq * score_k + g_k_sq * base_agent(control_input, t_k)
 
             vjp = torch.autograd.grad(
                 base_drift_k,
                 x_k,
                 grad_outputs=adjoint_next,
             )[0]
+            # Reverted adjoint recursion: Jacobian-vector term only.
             adjoint_curr = (adjoint_next + step_size * vjp).detach()
             adjoint_traj[k] = adjoint_curr
             adjoint_next = adjoint_curr
 
         # --- Adjoint Matching objective ---
         adjoint_matching_loss = torch.tensor(0.0, device=device)
+        cumulative_control_loss = torch.tensor(0.0, device=device)
+        mean_residual_norm = torch.tensor(0.0, device=device)
         for k in range(num_transitions):
             t_k = time_traj[k]
             step_size = step_traj[k]
@@ -562,9 +569,11 @@ def fictitious_train_control_adjoint_matching(
             finetune_control = control_agents[player_key](control_input, t_k)
             with torch.no_grad():
                 score_k = score_model(state_traj[player_key][k], t_k).detach()
+                base_control = base_agent(control_input, t_k).detach()
                 base_drift = (
                     -sde.f(state_traj[player_key][k], t_k)
                     + g_k_sq * score_k
+                    + g_k_sq * base_control
                 )
 
             finetune_drift = (
@@ -572,12 +581,13 @@ def fictitious_train_control_adjoint_matching(
                 + g_k_sq * score_k
                 + g_k_sq * finetune_control
             )
-            # VP/VE analogue of FM adjoint-matching:
             # residual = (b_finetune - b_base) / g(t) + g(t) * a_t.
             residual = (finetune_drift - base_drift) / g_k + g_k * adjoint_traj[k]
-            # Follow the reference implementation: sum over state dimensions, mean over batch.
-            residual_per_sample = residual.flatten(1).pow(2).sum(dim=1).mean()
-            adjoint_matching_loss += residual_per_sample * step_size
+            adjoint_matching_loss += torch.mean(residual**2) * step_size
+            cumulative_control_loss += torch.mean(finetune_control**2) * step_size / len(agent_keys)
+            mean_residual_norm += residual.flatten(1).norm(dim=1).mean()
+
+        mean_residual_norm = mean_residual_norm / max(num_transitions, 1)
 
         # Metrics for monitoring (no gradient path needed).
         with torch.no_grad():
@@ -585,22 +595,8 @@ def fictitious_train_control_adjoint_matching(
                 aggregator([final_states[key] for key in agent_keys]),
                 optimality_target,
             )
-            cumulative_control_loss = torch.tensor(0.0, device=device)
-            for k in range(num_transitions):
-                t_k = time_traj[k]
-                state_list = [state_traj[key][k] for key in agent_keys]
-                Y_t = aggregator(state_list)
-                grad_input = (
-                    player_guidance_traj[k]
-                    if running_state_cost_scaling > 0
-                    else torch.zeros_like(state_traj[player_key][k])
-                )
-                control_input = torch.cat([state_traj[player_key][k], Y_t, grad_input], dim=1)
-                finetune_control = control_agents[player_key](control_input, t_k)
-                cumulative_control_loss += torch.mean(finetune_control**2) * step_traj[k] / len(agent_keys)
 
-        # In adjoint matching, the optimization target is the matching loss itself.
-        total_loss = adjoint_matching_loss
+        total_loss = adjoint_matching_loss + lambda_reg * cumulative_control_loss
         total_loss.backward()
 
         torch.nn.utils.clip_grad_norm_(control_agents[player_key].parameters(), 1.0)
@@ -609,6 +605,7 @@ def fictitious_train_control_adjoint_matching(
         info = {}
         if debug:
             info["adjoint_matching_loss"] = adjoint_matching_loss.item()
+            info["mean_residual_norm"] = mean_residual_norm.item()
             info["cumulative_control_loss"] = cumulative_control_loss.item()
             info["cumulative_optimality_loss"] = cumulative_optimality_loss.item()
             info["terminal_optimality_loss"] = terminal_optimality_loss.item()
