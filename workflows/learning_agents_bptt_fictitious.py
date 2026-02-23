@@ -15,7 +15,10 @@ from src.envs.aggregator import ImageMaskAggregator
 from src.envs.registry import get_optimality_criterion
 from src.models.registry import get_model_by_name
 from src.samplers.diff_dyms import SDE
-from src.trainer.soc_bptt_ft import fictitious_train_control_bptt
+from src.trainer.soc_bptt_ft import (
+    fictitious_train_control_adjoint_matching,
+    fictitious_train_control_bptt,
+)
 from src.utils import generate_and_plot_samples, save_control_agents
 
 
@@ -95,6 +98,8 @@ def main(cfg: DictConfig) -> None:
     # Select training method.
     if soc_config.method == "bptt":
         train_soc_fn = fictitious_train_control_bptt
+    elif soc_config.method == "adjoint_matching":
+        train_soc_fn = fictitious_train_control_adjoint_matching
     else:
         raise ValueError(f"Unknown training method: {soc_config.method}")
     from tqdm.auto import tqdm
@@ -131,8 +136,8 @@ def main(cfg: DictConfig) -> None:
             for idx, loss in enumerate(losses, start=1)
         }
         total_val = sum(control_losses.values())
-        postfix_payload = {"total": f"{total_val:.4f}"}
-        postfix_payload.update({name: f"{value:.4f}" for name, value in control_losses.items()})
+        postfix_payload = {"total": f"{total_val:.4e}"}
+        postfix_payload.update({name: f"{value:.4e}" for name, value in control_losses.items()})
         pbar.set_postfix(**postfix_payload)
 
         if wandb_run is not None:

@@ -125,7 +125,7 @@ def main(cfg: DictConfig) -> None:
             sde=sde,
         )
         loss_value = float(loss)
-        pbar.set_postfix(loss=f"{loss_value:.4f}")
+        pbar.set_postfix(loss=f"{loss_value:.4e}")
 
         if wandb_run is not None:
             wandb_module.log(

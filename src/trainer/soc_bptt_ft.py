@@ -353,3 +353,291 @@ def fictitious_train_control_bptt(
             info_dict[key] = avg_info
 
     return loss_dict, info_dict if debug else {}
+
+
+def fictitious_train_control_adjoint_matching(
+    aggregator,
+    batch_size,
+    control_agents,
+    device,
+    eps,
+    image_dim,
+    inner_iters,
+    lambda_reg,
+    learning_rate,
+    num_steps,
+    optimality_criterion,
+    optimality_target,
+    running_state_cost_scaling,
+    score_model,
+    sde,
+    debug=False,
+):
+    """Fictitious-play style training with an adjoint-matching surrogate for VP/VE reverse SDE controls."""
+    score_model.eval()
+    optimality_criterion.eval()
+
+    agent_keys = sorted(control_agents.keys())
+    if not agent_keys:
+        raise ValueError("No control agents provided for fictitious training.")
+
+    optimizers = {
+        key: torch.optim.Adam(control_agents[key].parameters(), lr=learning_rate)
+        for key in agent_keys
+    }
+
+    def _train_single_control_policy_adjoint_matching(player_key):
+        """Train one control policy while keeping other agents fixed."""
+        for key in agent_keys:
+            if key == player_key:
+                control_agents[key].train()
+            else:
+                control_agents[key].eval()
+
+        optimizer = optimizers[player_key]
+        optimizer.zero_grad()
+
+        time_steps = torch.linspace(1.0, eps, num_steps, device=device)
+        if len(time_steps) < 2:
+            raise ValueError("num_steps must be at least 2 to compute a diffusion step.")
+
+        initial_time = torch.full((batch_size,), time_steps[0], device=device)
+        initial_std = sde.marginal_prob_std(initial_time)[:, None, None, None]
+        agent_states = {
+            key: torch.randn(batch_size, *image_dim, device=device) * initial_std
+            for key in agent_keys
+        }
+
+        state_traj = {key: [] for key in agent_keys}
+        time_traj = []
+        step_traj = []
+        g_traj = []
+        player_guidance_traj = []
+
+        cumulative_optimality_loss = torch.tensor(0.0, device=device)
+
+        # --- Forward trajectories --- DETACHED
+        for t_idx in range(len(time_steps) - 1):
+            t_curr = time_steps[t_idx]
+            t_next = time_steps[t_idx + 1]
+            step_size = t_curr - t_next
+            batch_time_step = torch.full((batch_size,), t_curr, device=device)
+
+            for key in agent_keys:
+                state_traj[key].append(agent_states[key].detach())
+            time_traj.append(batch_time_step.detach())
+            step_traj.append(step_size.detach())
+
+            g = sde.diffusion_coeff(batch_time_step)
+            g_sq = (g**2)[:, None, None, None]
+            g_noise = g[:, None, None, None]
+            g_traj.append(g_noise.detach())
+
+            with torch.no_grad():
+                Y_t = aggregator([agent_states[key] for key in agent_keys])
+                scores = {
+                    key: score_model(agent_states[key], batch_time_step)
+                    for key in agent_keys
+                }
+
+            grad_inputs = {}
+            if running_state_cost_scaling > 0:
+                x0_hats = {
+                    key: get_tweedy_estimate(sde, agent_states[key], batch_time_step, scores[key])
+                    for key in agent_keys
+                }
+                with torch.no_grad():
+                    Y_0_hat = aggregator([x0_hats[key] for key in agent_keys])
+                    cumulative_optimality_loss += (
+                        optimality_criterion.get_running_state_loss(
+                            Y_0_hat,
+                            optimality_target,
+                        )
+                        * step_size
+                    )
+                grad_inputs = compute_vectorized_guidance_grads(
+                    x0_hats=x0_hats,
+                    agent_keys=agent_keys,
+                    aggregator=aggregator,
+                    optimality_criterion=optimality_criterion,
+                    optimality_target=optimality_target,
+                )
+
+            if running_state_cost_scaling > 0:
+                player_guidance_traj.append(grad_inputs[player_key].detach())
+            else:
+                player_guidance_traj.append(torch.zeros_like(agent_states[player_key]))
+
+            controls = {}
+            for key in agent_keys:
+                grad_input = (
+                    grad_inputs[key]
+                    if running_state_cost_scaling > 0
+                    else torch.zeros_like(agent_states[key])
+                )
+                control_input = torch.cat([agent_states[key], Y_t, grad_input], dim=1)
+                with torch.no_grad():
+                    controls[key] = control_agents[key](control_input, batch_time_step).detach()
+
+            noise_scale = torch.sqrt(step_size) * g_noise
+            for key in agent_keys:
+                drift_rev = -sde.f(agent_states[key], batch_time_step) + g_sq * scores[key]
+                mean_state = agent_states[key] + (drift_rev + g_sq * controls[key]) * step_size
+                agent_states[key] = mean_state + noise_scale * torch.randn_like(agent_states[key])
+
+        final_states = {key: agent_states[key].detach() for key in agent_keys}
+
+        # --- Terminal adjoint initial condition: a_T = d(terminal loss)/dx_T ---
+        # This is to be used as the initial condition for the reverse-time adjoint recursion and is derived from the optimality criterion terminal loss.
+        x_terminal = final_states[player_key].detach().requires_grad_(True)
+        final_state_list = [
+            x_terminal if key == player_key else final_states[key]
+            for key in agent_keys
+        ]
+        Y_final = aggregator(final_state_list)
+        terminal_loss_for_adjoint = optimality_criterion.get_terminal_state_loss(
+            Y_final,
+            optimality_target,
+        )
+        # Loss minimization convention: a_T = + dL_T / dx_T.
+        # (If using reward maximization, this would be negated.)
+        adjoint_next = torch.autograd.grad(
+            terminal_loss_for_adjoint,  
+            x_terminal,
+            create_graph=False,
+        )[0].detach()
+
+        # --- Lean adjoint recursion using the base drift Jacobian --- DETACHED
+        num_transitions = len(time_traj)
+        adjoint_traj = [None] * num_transitions
+        for k in reversed(range(num_transitions)):
+            t_k = time_traj[k]
+            step_size = step_traj[k]
+            g_k = sde.diffusion_coeff(t_k)
+            g_k_sq = (g_k**2)[:, None, None, None]
+
+            x_k = state_traj[player_key][k].detach().requires_grad_(True)
+            state_list = [
+                x_k if key == player_key else state_traj[key][k]
+                for key in agent_keys
+            ]
+            Y_t = aggregator(state_list)
+
+            if running_state_cost_scaling > 0:
+                grad_input = player_guidance_traj[k]
+            else:
+                grad_input = torch.zeros_like(x_k)
+            control_input = torch.cat([x_k, Y_t, grad_input], dim=1)
+
+            score_k = score_model(x_k, t_k)
+            # Base field is the frozen pretrained reverse diffusion drift (no learned control).
+            base_drift_k = -sde.f(x_k, t_k) + g_k_sq * score_k
+
+            vjp = torch.autograd.grad(
+                base_drift_k,
+                x_k,
+                grad_outputs=adjoint_next,
+            )[0]
+            adjoint_curr = (adjoint_next + step_size * vjp).detach()
+            adjoint_traj[k] = adjoint_curr
+            adjoint_next = adjoint_curr
+
+        # --- Adjoint Matching objective ---
+        adjoint_matching_loss = torch.tensor(0.0, device=device)
+        for k in range(num_transitions):
+            t_k = time_traj[k]
+            step_size = step_traj[k]
+            g_k = g_traj[k]
+            g_k_sq = g_k**2
+
+            state_list = [state_traj[key][k] for key in agent_keys]
+            Y_t = aggregator(state_list)
+            grad_input = (
+                player_guidance_traj[k]
+                if running_state_cost_scaling > 0
+                else torch.zeros_like(state_traj[player_key][k])
+            )
+            control_input = torch.cat([state_traj[player_key][k], Y_t, grad_input], dim=1)
+
+            finetune_control = control_agents[player_key](control_input, t_k)
+            with torch.no_grad():
+                score_k = score_model(state_traj[player_key][k], t_k).detach()
+                base_drift = (
+                    -sde.f(state_traj[player_key][k], t_k)
+                    + g_k_sq * score_k
+                )
+
+            finetune_drift = (
+                -sde.f(state_traj[player_key][k], t_k)
+                + g_k_sq * score_k
+                + g_k_sq * finetune_control
+            )
+            # VP/VE analogue of FM adjoint-matching:
+            # residual = (b_finetune - b_base) / g(t) + g(t) * a_t.
+            residual = (finetune_drift - base_drift) / g_k + g_k * adjoint_traj[k]
+            # Follow the reference implementation: sum over state dimensions, mean over batch.
+            residual_per_sample = residual.flatten(1).pow(2).sum(dim=1).mean()
+            adjoint_matching_loss += residual_per_sample * step_size
+
+        # Metrics for monitoring (no gradient path needed).
+        with torch.no_grad():
+            terminal_optimality_loss = optimality_criterion.get_terminal_state_loss(
+                aggregator([final_states[key] for key in agent_keys]),
+                optimality_target,
+            )
+            cumulative_control_loss = torch.tensor(0.0, device=device)
+            for k in range(num_transitions):
+                t_k = time_traj[k]
+                state_list = [state_traj[key][k] for key in agent_keys]
+                Y_t = aggregator(state_list)
+                grad_input = (
+                    player_guidance_traj[k]
+                    if running_state_cost_scaling > 0
+                    else torch.zeros_like(state_traj[player_key][k])
+                )
+                control_input = torch.cat([state_traj[player_key][k], Y_t, grad_input], dim=1)
+                finetune_control = control_agents[player_key](control_input, t_k)
+                cumulative_control_loss += torch.mean(finetune_control**2) * step_traj[k] / len(agent_keys)
+
+        # In adjoint matching, the optimization target is the matching loss itself.
+        total_loss = adjoint_matching_loss
+        total_loss.backward()
+
+        torch.nn.utils.clip_grad_norm_(control_agents[player_key].parameters(), 1.0)
+        optimizer.step()
+
+        info = {}
+        if debug:
+            info["adjoint_matching_loss"] = adjoint_matching_loss.item()
+            info["cumulative_control_loss"] = cumulative_control_loss.item()
+            info["cumulative_optimality_loss"] = cumulative_optimality_loss.item()
+            info["terminal_optimality_loss"] = terminal_optimality_loss.item()
+            info["grad_norms"] = compute_grad_norms(control_agents)
+
+        return total_loss.item(), info
+
+    loss_dict = {}
+    info_dict = {}
+    for key in agent_keys:
+        loss_sum = 0.0
+        scalar_info_sums = defaultdict(float)
+        last_non_scalar_info = {}
+
+        for _ in range(inner_iters):
+            loss_value, info_step = _train_single_control_policy_adjoint_matching(player_key=key)
+            loss_sum += loss_value
+
+            if debug and info_step:
+                for k, v in info_step.items():
+                    if isinstance(v, (int, float)):
+                        scalar_info_sums[k] += float(v)
+                    else:
+                        last_non_scalar_info[k] = v
+
+        loss_dict[key] = loss_sum / inner_iters
+        if debug:
+            avg_info = {k: v / inner_iters for k, v in scalar_info_sums.items()}
+            avg_info.update(last_non_scalar_info)
+            info_dict[key] = avg_info
+
+    return loss_dict, info_dict if debug else {}
