@@ -513,7 +513,7 @@ def fictitious_train_control_adjoint_matching(
             noise_scale = torch.sqrt(step_size) * g_noise
             for key in agent_keys:
                 drift_rev = -sde.f(agent_states[key], batch_time_step) + g_sq * scores[key]
-                mean_state = agent_states[key] + (drift_rev + g_sq * controls[key]) * step_size
+                mean_state = agent_states[key] + (drift_rev + g_noise * controls[key]) * step_size
                 agent_states[key] = mean_state + noise_scale * torch.randn_like(agent_states[key])
 
         final_states = {key: agent_states[key].detach() for key in agent_keys}
@@ -538,7 +538,7 @@ def fictitious_train_control_adjoint_matching(
             create_graph=False,
         )[0].detach()
 
-        # --- Lean adjoint recursion using the base drift Jacobian --- DETACHED
+        # --- Lean adjoint recursion --- DETACHED
         num_transitions = len(time_traj)
         adjoint_traj = [None] * num_transitions
         for k in reversed(range(num_transitions)):
@@ -562,7 +562,7 @@ def fictitious_train_control_adjoint_matching(
 
             score_k = score_model(x_k, t_k)
             # Base field is the frozen pretrained reverse diffusion drift (no learned control).
-            base_drift_k = -sde.f(x_k, t_k) + g_k_sq * score_k + g_k_sq * base_agent(control_input, t_k)
+            base_drift_k = -sde.f(x_k, t_k) + g_k_sq * score_k + g_k[:, None, None, None] * base_agent(control_input, t_k)
 
             vjp = torch.autograd.grad(
                 base_drift_k,
@@ -637,13 +637,13 @@ def fictitious_train_control_adjoint_matching(
                     base_drift = (
                         -sde.f(state_traj[player_key][k], t_k)
                         + g_k_sq * score_k
-                        + g_k_sq * base_control
+                        + g_k * base_control
                     )
 
                 finetune_drift = (
                     -sde.f(state_traj[player_key][k], t_k)
                     + g_k_sq * score_k
-                    + g_k_sq * finetune_control
+                    + g_k * finetune_control
                 )
                 # residual = (b_finetune - b_base) / g(t) + g(t) * a_t.
                 residual = (finetune_drift - base_drift) / g_k + g_k * adjoint_traj[k]
