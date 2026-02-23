@@ -16,11 +16,12 @@ from src.envs.registry import get_optimality_criterion
 from src.models.registry import get_model_by_name
 from src.samplers.diff_dyms import SDE
 from src.trainer.soc_bptt_ft import (
-    fictitious_train_control_adjoint_matching,
     fictitious_train_control_bptt,
 )
 from src.utils import generate_and_plot_samples, save_control_agents
-
+from src.trainer.soc_am_ft import (
+    fictitious_train_control_adjoint_matching,
+)
 
 def _load_state(module: torch.nn.Module, checkpoint_path: str, device: torch.device) -> None:
     checkpoint = torch.load(to_absolute_path(checkpoint_path), map_location=device)
