@@ -372,6 +372,8 @@ def fictitious_train_control_adjoint_matching(
     running_state_cost_scaling,
     score_model,
     sde,
+    reuse_forward_adjoint_steps=1,
+    ema_decay=0.0,
     debug=False,
 ):
     """Fictitious-play style training with an adjoint-matching surrogate for VP/VE reverse SDE controls."""
@@ -381,11 +383,34 @@ def fictitious_train_control_adjoint_matching(
     agent_keys = sorted(control_agents.keys())
     if not agent_keys:
         raise ValueError("No control agents provided for fictitious training.")
+    reuse_forward_adjoint_steps = int(reuse_forward_adjoint_steps)
+    if reuse_forward_adjoint_steps < 1:
+        raise ValueError("reuse_forward_adjoint_steps must be >= 1.")
+    ema_decay = float(ema_decay)
+    if not (0.0 <= ema_decay < 1.0):
+        raise ValueError("ema_decay must be in [0, 1).")
 
     optimizers = {
         key: torch.optim.Adam(control_agents[key].parameters(), lr=learning_rate)
         for key in agent_keys
     }
+    ema_base_agents = {}
+    if ema_decay > 0.0:
+        for key in agent_keys:
+            ema_agent = copy.deepcopy(control_agents[key]).to(device)
+            ema_agent.eval()
+            ema_agent.requires_grad_(False)
+            ema_base_agents[key] = ema_agent
+
+    def _ema_update_base(player_key):
+        if ema_decay <= 0.0:
+            return
+        with torch.no_grad():
+            for ema_param, src_param in zip(
+                ema_base_agents[player_key].parameters(),
+                control_agents[player_key].parameters(),
+            ):
+                ema_param.mul_(ema_decay).add_(src_param, alpha=1.0 - ema_decay)
 
     def _train_single_control_policy_adjoint_matching(player_key):
         """Train one control policy while keeping other agents fixed."""
@@ -396,12 +421,14 @@ def fictitious_train_control_adjoint_matching(
                 control_agents[key].eval()
 
         optimizer = optimizers[player_key]
-        optimizer.zero_grad()
 
         time_steps = torch.linspace(1.0, eps, num_steps, device=device)
-        base_agent = copy.deepcopy(control_agents[player_key]).to(device)
-        base_agent.eval()
-        base_agent.requires_grad_(False)
+        if ema_decay > 0.0:
+            base_agent = ema_base_agents[player_key]
+        else:
+            base_agent = copy.deepcopy(control_agents[player_key]).to(device)
+            base_agent.eval()
+            base_agent.requires_grad_(False)
         if len(time_steps) < 2:
             raise ValueError("num_steps must be at least 2 to compute a diffusion step.")
 
@@ -541,77 +568,123 @@ def fictitious_train_control_adjoint_matching(
                 base_drift_k,
                 x_k,
                 grad_outputs=adjoint_next,
+                retain_graph=running_state_cost_scaling > 0,
             )[0]
-            # Reverted adjoint recursion: Jacobian-vector term only.
-            adjoint_curr = (adjoint_next + step_size * vjp).detach()
+            running_grad_x_t = torch.zeros_like(vjp)
+            if running_state_cost_scaling > 0:
+                x0_hats_for_running = {}
+                for key in agent_keys:
+                    if key == player_key:
+                        x0_hats_for_running[key] = get_tweedy_estimate(sde, x_k, t_k, score_k)
+                    else:
+                        with torch.no_grad():
+                            score_other = score_model(state_traj[key][k], t_k)
+                            x0_hats_for_running[key] = get_tweedy_estimate(
+                                sde,
+                                state_traj[key][k],
+                                t_k,
+                                score_other,
+                            ).detach()
+                running_loss_k = optimality_criterion.get_running_state_loss(
+                    aggregator([x0_hats_for_running[key] for key in agent_keys]),
+                    optimality_target,
+                )
+                running_grad_x_t = running_state_cost_scaling * torch.autograd.grad(
+                    running_loss_k,
+                    x_k,
+                )[0]
+
+            adjoint_curr = (adjoint_next + step_size * (vjp + running_grad_x_t)).detach()
             adjoint_traj[k] = adjoint_curr
             adjoint_next = adjoint_curr
 
-        # --- Adjoint Matching objective ---
-        adjoint_matching_loss = torch.tensor(0.0, device=device)
-        cumulative_control_loss = torch.tensor(0.0, device=device)
-        mean_residual_norm = torch.tensor(0.0, device=device)
-        for k in range(num_transitions):
-            t_k = time_traj[k]
-            step_size = step_traj[k]
-            g_k = g_traj[k]
-            g_k_sq = g_k**2
-
-            state_list = [state_traj[key][k] for key in agent_keys]
-            Y_t = aggregator(state_list)
-            grad_input = (
-                player_guidance_traj[k]
-                if running_state_cost_scaling > 0
-                else torch.zeros_like(state_traj[player_key][k])
-            )
-            control_input = torch.cat([state_traj[player_key][k], Y_t, grad_input], dim=1)
-
-            finetune_control = control_agents[player_key](control_input, t_k)
-            with torch.no_grad():
-                score_k = score_model(state_traj[player_key][k], t_k).detach()
-                base_control = base_agent(control_input, t_k).detach()
-                base_drift = (
-                    -sde.f(state_traj[player_key][k], t_k)
-                    + g_k_sq * score_k
-                    + g_k_sq * base_control
-                )
-
-            finetune_drift = (
-                -sde.f(state_traj[player_key][k], t_k)
-                + g_k_sq * score_k
-                + g_k_sq * finetune_control
-            )
-            # residual = (b_finetune - b_base) / g(t) + g(t) * a_t.
-            residual = (finetune_drift - base_drift) / g_k + g_k * adjoint_traj[k]
-            adjoint_matching_loss += torch.mean(residual**2) * step_size
-            cumulative_control_loss += torch.mean(finetune_control**2) * step_size / len(agent_keys)
-            mean_residual_norm += residual.flatten(1).norm(dim=1).mean()
-
-        mean_residual_norm = mean_residual_norm / max(num_transitions, 1)
-
-        # Metrics for monitoring (no gradient path needed).
+        # Terminal metric for monitoring (constant across reused optimization steps).
         with torch.no_grad():
             terminal_optimality_loss = optimality_criterion.get_terminal_state_loss(
                 aggregator([final_states[key] for key in agent_keys]),
                 optimality_target,
             )
 
-        total_loss = adjoint_matching_loss + lambda_reg * cumulative_control_loss
-        total_loss.backward()
+        total_loss_sum = torch.tensor(0.0, device=device)
+        adjoint_matching_loss_sum = torch.tensor(0.0, device=device)
+        cumulative_control_loss_sum = torch.tensor(0.0, device=device)
+        mean_residual_norm_sum = torch.tensor(0.0, device=device)
+        for _ in range(reuse_forward_adjoint_steps):
+            optimizer.zero_grad()
+            # --- Adjoint Matching objective (reused trajectories/adjoints) ---
+            adjoint_matching_loss = torch.tensor(0.0, device=device)
+            cumulative_control_loss = torch.tensor(0.0, device=device)
+            mean_residual_norm = torch.tensor(0.0, device=device)
+            for k in range(num_transitions):
+                t_k = time_traj[k]
+                step_size = step_traj[k]
+                g_k = g_traj[k]
+                g_k_sq = g_k**2
 
-        torch.nn.utils.clip_grad_norm_(control_agents[player_key].parameters(), 1.0)
-        optimizer.step()
+                state_list = [state_traj[key][k] for key in agent_keys]
+                Y_t = aggregator(state_list)
+                grad_input = (
+                    player_guidance_traj[k]
+                    if running_state_cost_scaling > 0
+                    else torch.zeros_like(state_traj[player_key][k])
+                )
+                control_input = torch.cat([state_traj[player_key][k], Y_t, grad_input], dim=1)
+
+                finetune_control = control_agents[player_key](control_input, t_k)
+                with torch.no_grad():
+                    score_k = score_model(state_traj[player_key][k], t_k).detach()
+                    base_control = base_agent(control_input, t_k).detach()
+                    base_drift = (
+                        -sde.f(state_traj[player_key][k], t_k)
+                        + g_k_sq * score_k
+                        + g_k_sq * base_control
+                    )
+
+                finetune_drift = (
+                    -sde.f(state_traj[player_key][k], t_k)
+                    + g_k_sq * score_k
+                    + g_k_sq * finetune_control
+                )
+                # residual = (b_finetune - b_base) / g(t) + g(t) * a_t.
+                residual = (finetune_drift - base_drift) / g_k + g_k * adjoint_traj[k]
+                adjoint_matching_loss += torch.mean(residual**2) * step_size
+                cumulative_control_loss += torch.mean(finetune_control**2) * step_size / len(agent_keys)
+                mean_residual_norm += residual.flatten(1).norm(dim=1).mean()
+
+            mean_residual_norm = mean_residual_norm / max(num_transitions, 1)
+
+            total_loss = adjoint_matching_loss + lambda_reg * cumulative_control_loss
+            total_loss.backward()
+
+            torch.nn.utils.clip_grad_norm_(control_agents[player_key].parameters(), 1.0)
+            optimizer.step()
+            _ema_update_base(player_key)
+
+            total_loss_sum += total_loss.detach()
+            adjoint_matching_loss_sum += adjoint_matching_loss.detach()
+            cumulative_control_loss_sum += cumulative_control_loss.detach()
+            mean_residual_norm_sum += mean_residual_norm.detach()
+
+        total_loss_avg = total_loss_sum / reuse_forward_adjoint_steps
+        adjoint_matching_loss_avg = adjoint_matching_loss_sum / reuse_forward_adjoint_steps
+        cumulative_control_loss_avg = cumulative_control_loss_sum / reuse_forward_adjoint_steps
+        mean_residual_norm_avg = mean_residual_norm_sum / reuse_forward_adjoint_steps
 
         info = {}
         if debug:
-            info["adjoint_matching_loss"] = adjoint_matching_loss.item()
-            info["mean_residual_norm"] = mean_residual_norm.item()
-            info["cumulative_control_loss"] = cumulative_control_loss.item()
+            control_reg_loss = lambda_reg * cumulative_control_loss_avg
+            info["total_loss"] = total_loss_avg.item()
+            info["adjoint_matching_loss"] = adjoint_matching_loss_avg.item()
+            info["control_reg_loss"] = control_reg_loss.item()
+            info["mean_residual_norm"] = mean_residual_norm_avg.item()
+            info["cumulative_control_loss"] = cumulative_control_loss_avg.item()
             info["cumulative_optimality_loss"] = cumulative_optimality_loss.item()
             info["terminal_optimality_loss"] = terminal_optimality_loss.item()
+            info["reuse_forward_adjoint_steps"] = reuse_forward_adjoint_steps
+            info["ema_decay"] = ema_decay
             info["grad_norms"] = compute_grad_norms(control_agents)
 
-        return total_loss.item(), info
+        return total_loss_avg.item(), info
 
     loss_dict = {}
     info_dict = {}

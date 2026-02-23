@@ -107,7 +107,7 @@ def main(cfg: DictConfig) -> None:
     for step in pbar:
         # NOTE: we intialise the optmizer inside the training function to reset it every iteration.
         # We could also pass in the optimizer state if we wanted to keep it across iterations.
-        loss_dict, info = train_soc_fn(
+        train_kwargs = dict(
             aggregator=aggregator,
             batch_size=soc_config.batch_size,
             control_agents=control_agents,
@@ -125,6 +125,11 @@ def main(cfg: DictConfig) -> None:
             score_model=score_model,
             sde=sde,
         )
+        if soc_config.method == "adjoint_matching":
+            train_kwargs["reuse_forward_adjoint_steps"] = soc_config.get("reuse_forward_adjoint_steps", 1)
+            train_kwargs["ema_decay"] = soc_config.get("ema_decay", 0.0)
+
+        loss_dict, info = train_soc_fn(**train_kwargs)
 
         if isinstance(loss_dict, dict):
             losses = list(loss_dict.values())
