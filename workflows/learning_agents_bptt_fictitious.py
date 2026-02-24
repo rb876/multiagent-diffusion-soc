@@ -1,4 +1,3 @@
-import functools
 from pathlib import Path
 from typing import Dict, Any
 
@@ -117,7 +116,7 @@ def main(cfg: DictConfig) -> None:
             eps=soc_config.eps,
             image_dim=tuple(cfg.exps.data.loader.img_size),
             inner_iters=soc_config.inner_iters,
-            lambda_reg=soc_config.lambda_reg,
+            lambda_reg=soc_config.get("lambda_reg", 0.0),
             learning_rate=soc_config.learning_rate,
             num_steps=soc_config.train_num_steps,
             optimality_criterion=optimality_criterion,

@@ -74,6 +74,24 @@
 
         },
         {
+            "name": "Python Debugger: Learning Agents Fictitious Adjoint Matching Evaluation VP",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "workflows.learning_agents_bptt_fictitious",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",            
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0"
+            },
+            "args": [
+                "--config-path",
+                "../configs",
+                "--config-name",
+                "exps/fictitious_adjoint_matching_learning_agents_fine_tuning",
+            ]
+
+        },
+        {
             "name": "Python Debugger: DPS",
             "type": "debugpy",
             "request": "launch",

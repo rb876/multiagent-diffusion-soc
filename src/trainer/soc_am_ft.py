@@ -15,7 +15,6 @@ def fictitious_train_control_adjoint_matching(
     eps,
     image_dim,
     inner_iters,
-    lambda_reg,
     learning_rate,
     num_steps,
     optimality_criterion,
@@ -23,6 +22,7 @@ def fictitious_train_control_adjoint_matching(
     running_state_cost_scaling,
     score_model,
     sde,
+    lambda_reg = 0.0, # Unused in this version but can be added to the loss if desired. This is for compatibility with backpropagation through time (BPTT) version where it is used.
     reuse_forward_adjoint_steps=1,
     ema_decay=0.0,
     debug=False,
@@ -182,7 +182,6 @@ def fictitious_train_control_adjoint_matching(
             optimality_target,
         )
         # Loss minimization convention: a_T = + dL_T / dx_T.
-        # (If using reward maximization, this would be negated.)
         adjoint_next = torch.autograd.grad(
             terminal_loss_for_adjoint,  
             x_terminal,
@@ -195,8 +194,8 @@ def fictitious_train_control_adjoint_matching(
         for k in reversed(range(num_transitions)):
             t_k = time_traj[k]
             step_size = step_traj[k]
-            g_k = sde.diffusion_coeff(t_k)
-            g_k_sq = (g_k**2)[:, None, None, None]
+            g_k = sde.diffusion_coeff(t_k)[:, None, None, None]
+            g_k_sq = (sde.diffusion_coeff(t_k)**2)[:, None, None, None]
 
             x_k = state_traj[player_key][k].detach().requires_grad_(True)
             state_list = [
@@ -213,7 +212,7 @@ def fictitious_train_control_adjoint_matching(
 
             score_k = score_model(x_k, t_k)
             # Base field is the frozen pretrained reverse diffusion drift (no learned control).
-            base_drift_k = -sde.f(x_k, t_k) + g_k_sq * score_k + g_k[:, None, None, None] * base_agent(control_input, t_k)
+            base_drift_k = -sde.f(x_k, t_k) + g_k_sq * score_k + g_k * base_agent(control_input, t_k)
 
             vjp = torch.autograd.grad(
                 base_drift_k,
@@ -262,7 +261,7 @@ def fictitious_train_control_adjoint_matching(
         mean_residual_norm_sum = torch.tensor(0.0, device=device)
         for _ in range(reuse_forward_adjoint_steps):
             optimizer.zero_grad()
-            # --- Adjoint Matching objective (reused trajectories/adjoints) ---
+            # --- Adjoint Matching objective (trajectories/adjoints) ---
             adjoint_matching_loss = torch.tensor(0.0, device=device)
             cumulative_control_loss = torch.tensor(0.0, device=device)
             mean_residual_norm = torch.tensor(0.0, device=device)
@@ -299,19 +298,18 @@ def fictitious_train_control_adjoint_matching(
                 # residual = (b_finetune - b_base) / g(t) + g(t) * a_t.
                 residual = (finetune_drift - base_drift) / g_k + g_k * adjoint_traj[k]
                 adjoint_matching_loss += torch.mean(residual**2) * step_size
+                
+                # This losses are for infos and diagnostics, not used for optimization in this version.
                 cumulative_control_loss += torch.mean(finetune_control**2) * step_size / len(agent_keys)
                 mean_residual_norm += residual.flatten(1).norm(dim=1).mean()
 
             mean_residual_norm = mean_residual_norm / max(num_transitions, 1)
-
-            total_loss = adjoint_matching_loss + lambda_reg * cumulative_control_loss
-            total_loss.backward()
+            adjoint_matching_loss.backward()
 
             torch.nn.utils.clip_grad_norm_(control_agents[player_key].parameters(), 1.0)
             optimizer.step()
             _ema_update_base(player_key)
 
-            total_loss_sum += total_loss.detach()
             adjoint_matching_loss_sum += adjoint_matching_loss.detach()
             cumulative_control_loss_sum += cumulative_control_loss.detach()
             mean_residual_norm_sum += mean_residual_norm.detach()
@@ -323,10 +321,8 @@ def fictitious_train_control_adjoint_matching(
 
         info = {}
         if debug:
-            control_reg_loss = lambda_reg * cumulative_control_loss_avg
             info["total_loss"] = total_loss_avg.item()
             info["adjoint_matching_loss"] = adjoint_matching_loss_avg.item()
-            info["control_reg_loss"] = control_reg_loss.item()
             info["mean_residual_norm"] = mean_residual_norm_avg.item()
             info["cumulative_control_loss"] = cumulative_control_loss_avg.item()
             info["cumulative_optimality_loss"] = cumulative_optimality_loss.item()
@@ -372,7 +368,6 @@ def fictitious_train_control_adjoint_matching_amtrainer_style(
     eps,
     image_dim,
     inner_iters,
-    lambda_reg,
     learning_rate,
     num_steps,
     optimality_criterion,
@@ -380,6 +375,7 @@ def fictitious_train_control_adjoint_matching_amtrainer_style(
     running_state_cost_scaling,
     score_model,
     sde,
+    lambda_reg = 0.0, # Unused in this version but can be added to the loss if desired. This is for compatibility with backpropagation through time (BPTT) version where it is used.
     reuse_forward_adjoint_steps=1,
     ema_decay=0.0,
     debug=False,
@@ -388,9 +384,9 @@ def fictitious_train_control_adjoint_matching_amtrainer_style(
     AMTrainer-style fictitious-play training:
       - forward trajectories: detached
       - terminal adjoint: d terminal loss / d x_T
-      - adjoint recursion: AMTrainer inner-product gradient through CURRENT player policy
+      - adjoint recursion: AMTrainer inner-product gradient through player policy
       - includes running-state loss gradient term (via Tweedie + compute_vectorized_guidance_grads)
-      - training objective: match u + g * a ≈ 0 plus control L2 regularization
+      - training objective: match u + g * a ≈ 0
     """
     score_model.eval()
     optimality_criterion.eval()
@@ -434,23 +430,26 @@ def fictitious_train_control_adjoint_matching_amtrainer_style(
         states_at_k,     # dict key -> tensor (detached ok)
         running_grad_input_for_policy,  # tensor like x_k, detached (guidance features)
         *,
-        policy_model,    # control model to use inside Phi (AMTrainer uses current model)
+        policy_model,    # control model to use inside Phi; None means uncontrolled/base map
     ):
         """
         Deterministic one-step mean map Phi(x_k) with noise=0:
             Phi = x_k + dt * ( -f + g^2 score + g u_theta )
         VP/VE both supported if sde.f / diffusion_coeff / score_model consistent.
         """
-        state_list = [x_k if key == player_key else states_at_k[key] for key in agent_keys]
-        Y_t = aggregator(state_list)
-
-        control_input = torch.cat([x_k, Y_t, running_grad_input_for_policy], dim=1)
-
         score_k = score_model(x_k, t_k)  # differentiable in x_k
         g = sde.diffusion_coeff(t_k)[:, None, None, None]
         g_sq = g * g
 
-        u = policy_model(control_input, t_k)  # differentiable
+        if policy_model is None:
+            # Adjoint propagation uses the base/uncontrolled drift.
+            u = torch.zeros_like(x_k)
+        else:
+            state_list = [x_k if key == player_key else states_at_k[key] for key in agent_keys]
+            Y_t = aggregator(state_list)
+            control_input = torch.cat([x_k, Y_t, running_grad_input_for_policy], dim=1)
+            u = policy_model(control_input, t_k)  # differentiable
+
         drift_rev = -sde.f(x_k, t_k) + g_sq * score_k
         x_next_mean = x_k + (drift_rev + g * u) * dt
         return x_next_mean
@@ -465,8 +464,8 @@ def fictitious_train_control_adjoint_matching_amtrainer_style(
         running_grad_input_for_policy,
     ):
         """
-        AMTrainer-style:
-            grad_x  <Phi_theta(x_k) - x_k, a_next>
+        AM-style:
+            grad_x  <Phi_base(x_k) - x_k, a_next>
         """
         with torch.enable_grad():
             x_k = x_k_detached.detach().requires_grad_(True)
@@ -477,7 +476,7 @@ def fictitious_train_control_adjoint_matching_amtrainer_style(
                 dt=dt,
                 states_at_k=states_at_k,
                 running_grad_input_for_policy=running_grad_input_for_policy,
-                policy_model=control_agents[player_key],   # <-- key: CURRENT player policy
+                policy_model=None,
             )
             inner = torch.sum((phi - x_k) * a_next, dim=[0, 1, 2, 3])
             grad_x = torch.autograd.grad(inner, x_k, create_graph=False)[0]
@@ -541,7 +540,7 @@ def fictitious_train_control_adjoint_matching_amtrainer_style(
 
             grad_inputs = {key: torch.zeros_like(agent_states[key]) for key in agent_keys}
 
-            # running-state guidance features (same as your code)
+            # running-state guidance features and running loss accumulation for monitoring
             if running_state_cost_scaling > 0:
                 x0_hats = {
                     key: get_tweedy_estimate(sde, agent_states[key], t_batch, scores[key])
@@ -588,7 +587,7 @@ def fictitious_train_control_adjoint_matching_amtrainer_style(
         terminal_loss = optimality_criterion.get_terminal_state_loss(Y_T, optimality_target)
         a_next = torch.autograd.grad(terminal_loss, x_T, create_graph=False)[0].detach()
 
-        # --- backward adjoint recursion (AMTrainer inner-product gradients) ---
+        # --- backward adjoint recursion (inner-product gradients) ---
         K = len(time_traj)
         adjoint_traj = [None] * K
 
@@ -597,8 +596,7 @@ def fictitious_train_control_adjoint_matching_amtrainer_style(
             dt = dt_traj[k]
             states_at_k = {key: state_traj[key][k] for key in agent_keys}
 
-            # Use the stored guidance feature as *input feature* to the policy inside Phi.
-            # We DO NOT backprop through how it was computed (it is detached), same as your helper does.
+            # Use the stored guidance feature as input feature to the policy inside Phi.
             grad_input_feature = player_guidance_traj[k]
 
             grad_ip = _grad_inner_product(
@@ -644,7 +642,6 @@ def fictitious_train_control_adjoint_matching_amtrainer_style(
             a_next = a_curr
 
         # --- optimize policy by adjoint matching ---
-        # You *can* reuse the same trajectories/adjoints, but in strict AMTrainer spirit you'd recompute each iter.
         total_loss_sum = torch.tensor(0.0, device=device)
         info = {}
 
@@ -652,8 +649,6 @@ def fictitious_train_control_adjoint_matching_amtrainer_style(
             optimizer.zero_grad()
 
             adjoint_matching_loss = torch.tensor(0.0, device=device)
-            control_reg = torch.tensor(0.0, device=device)
-
             for k in range(K):
                 t_k = time_traj[k]
                 dt = dt_traj[k]
@@ -670,19 +665,15 @@ def fictitious_train_control_adjoint_matching_amtrainer_style(
                 control_input = torch.cat([state_traj[player_key][k], Y_t, grad_feat], dim=1)
 
                 u = control_agents[player_key](control_input, t_k)
-
-                # AM target: u + g * a ≈ 0  (VP: g = sqrt(beta))
                 residual = u + g * adjoint_traj[k]
                 adjoint_matching_loss = adjoint_matching_loss + torch.mean(residual ** 2) * dt
-                control_reg = control_reg + torch.mean(u ** 2) * dt / len(agent_keys)
 
-            total_loss = adjoint_matching_loss + lambda_reg * control_reg
-            total_loss.backward()
+            adjoint_matching_loss.backward()
             torch.nn.utils.clip_grad_norm_(control_agents[player_key].parameters(), 1.0)
             optimizer.step()
             _ema_update(player_key)
 
-            total_loss_sum += total_loss.detach()
+            total_loss_sum += adjoint_matching_loss.detach()
 
         total_loss_avg = total_loss_sum / reuse_forward_adjoint_steps
 
