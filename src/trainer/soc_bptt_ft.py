@@ -6,14 +6,14 @@ from src.samplers.diff_dyms import get_tweedy_estimate
 from src.guidance import compute_vectorized_guidance_grads
 
 
-def train_control_bptt(
+def train_joint_control_bptt(
     aggregator,
     batch_size,
     control_agents,
     device,
     eps,
     image_dim,
-    lambda_reg,
+    control_cost_scaling,
     num_steps,
     optimality_criterion,
     optimality_target,
@@ -142,7 +142,7 @@ def train_control_bptt(
     )
     # Compute overall SOC loss to backpropagate.
     total_loss = (
-        lambda_reg * cumulative_control_loss
+        control_cost_scaling * cumulative_control_loss
         + optimality_loss
         + running_state_cost_scaling * cumulative_optimality_loss
     )
@@ -167,7 +167,7 @@ def train_control_bptt(
     return total_loss.item(), info
 
 
-def fictitious_train_control_bptt(
+def control_wise_bptt(
     aggregator,
     batch_size,
     control_agents,
@@ -175,7 +175,7 @@ def fictitious_train_control_bptt(
     eps,
     image_dim,
     inner_iters,
-    lambda_reg,
+    control_cost_scaling,
     learning_rate,
     num_steps,
     optimality_criterion,
@@ -314,7 +314,7 @@ def fictitious_train_control_bptt(
         )
         # Compute overall SOC loss to backpropagate.
         total_loss = (
-            lambda_reg * cumulative_control_loss
+            control_cost_scaling * cumulative_control_loss
             + optimality_loss
             + running_state_cost_scaling * cumulative_optimality_loss
         )

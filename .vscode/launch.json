@@ -56,10 +56,10 @@
             ]
         },
         {
-            "name": "Python Debugger: Learning Agents Fictitious BPTT Evaluation VP",
+            "name": "Python Debugger: Learning Agents Control Wise BPTT Evaluation VP",
             "type": "debugpy",
             "request": "launch",
-            "module": "workflows.learning_agents_bptt_fictitious",
+            "module": "workflows.learning_agents_soc_control_wise",
             "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",            
             "env": {
@@ -69,15 +69,15 @@
                 "--config-path",
                 "../configs",
                 "--config-name",
-                "exps/fictitious_bptt_learning_agents_fine_tuning",
+                "exps/control_wise_bptt_learning_agents_fine_tuning",
             ]
 
         },
         {
-            "name": "Python Debugger: Learning Agents Fictitious Adjoint Matching Evaluation VP",
+            "name": "Python Debugger: Learning Agents Control Wise Adjoint Matching Evaluation VP",
             "type": "debugpy",
             "request": "launch",
-            "module": "workflows.learning_agents_bptt_fictitious",
+            "module": "workflows.learning_agents_soc_control_wise",
             "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",            
             "env": {
@@ -87,7 +87,7 @@
                 "--config-path",
                 "../configs",
                 "--config-name",
-                "exps/fictitious_adjoint_matching_learning_agents_fine_tuning",
+                "exps/control_wise_adjoint_matching_learning_agents_fine_tuning",
             ]
 
         },

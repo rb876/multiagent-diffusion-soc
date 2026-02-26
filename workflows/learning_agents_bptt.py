@@ -13,7 +13,7 @@ from src.envs.aggregator import ImageMaskAggregator
 from src.envs.registry import get_optimality_criterion
 from src.models.registry import get_model_by_name
 from src.samplers.diff_dyms import SDE
-from src.trainer.soc_bptt_ft import train_control_bptt
+from src.trainer.soc_bptt_ft import train_joint_control_bptt
 from src.utils import generate_and_plot_samples, save_control_agents
 
 
@@ -100,7 +100,7 @@ def main(cfg: DictConfig) -> None:
     ).to(device)
     # Select training method.
     if soc_config.method == "bptt":
-        train_soc_fn = train_control_bptt
+        train_soc_fn = train_joint_control_bptt
     else:
         raise ValueError(f"Unknown training method: {soc_config.method}")
 
@@ -115,7 +115,7 @@ def main(cfg: DictConfig) -> None:
             device=device,
             eps=soc_config.eps,
             image_dim=tuple(cfg.exps.data.loader.img_size),
-            lambda_reg=soc_config.lambda_reg,
+            control_cost_scaling=soc_config.control_cost_scaling,
             num_steps=soc_config.train_num_steps,
             optimality_criterion=optimality_criterion,
             optimality_target=soc_config.optimality_target,

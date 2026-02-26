@@ -17,7 +17,8 @@ soc:
   outer_iters: 300
   path_to_classifier_checkpoint: checkpoints/cnet.pt
   path_to_score_model_checkpoint: checkpoints/vp/latest.ckpt
-  running_state_cost_scaling: 1.0
+  running_state_cost_scaling: 100.0
+  terminal_state_cost_scaling: 100.0
   reuse_forward_adjoint_steps: 5
   ema_decay: 0.999
   sample_batch_size: 64

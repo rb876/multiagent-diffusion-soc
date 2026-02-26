@@ -1,5 +1,6 @@
 from pathlib import Path
 from typing import Dict, Any
+from functools import partial
 
 import hydra
 import torch
@@ -15,11 +16,11 @@ from src.envs.registry import get_optimality_criterion
 from src.models.registry import get_model_by_name
 from src.samplers.diff_dyms import SDE
 from src.trainer.soc_bptt_ft import (
-    fictitious_train_control_bptt,
+    control_wise_bptt,
 )
 from src.utils import generate_and_plot_samples, save_control_agents
 from src.trainer.soc_am_ft import (
-    fictitious_train_control_adjoint_matching,
+    control_wise_adjoint_matching,
 )
 
 def _load_state(module: torch.nn.Module, checkpoint_path: str, device: torch.device) -> None:
@@ -97,9 +98,21 @@ def main(cfg: DictConfig) -> None:
     ).to(device)
     # Select training method.
     if soc_config.method == "bptt":
-        train_soc_fn = fictitious_train_control_bptt
+        train_soc_fn = control_wise_bptt
+        specific_kwargs = {
+            "control_cost_scaling": soc_config.get("control_cost_scaling"),
+            "running_state_cost_scaling": soc_config.get("running_state_cost_scaling")
+        }
+        train_soc_fn = partial(train_soc_fn, **specific_kwargs)
     elif soc_config.method == "adjoint_matching":
-        train_soc_fn = fictitious_train_control_adjoint_matching
+        train_soc_fn = control_wise_adjoint_matching
+        specific_kwargs = {
+            "terminal_state_cost_scaling": soc_config.get("terminal_state_cost_scaling"),
+            "running_state_cost_scaling": soc_config.get("running_state_cost_scaling"),
+            "reuse_forward_adjoint_steps": soc_config.get("reuse_forward_adjoint_steps", 1),
+            "ema_decay": soc_config.get("ema_decay", 0.0), # deactivated by default since we are reinitializing the optimizer every iteration, but can be used if we want to keep the optimizer state across iterations.
+        }
+        train_soc_fn = partial(train_soc_fn, **specific_kwargs)
     else:
         raise ValueError(f"Unknown training method: {soc_config.method}")
     from tqdm.auto import tqdm
@@ -116,12 +129,10 @@ def main(cfg: DictConfig) -> None:
             eps=soc_config.eps,
             image_dim=tuple(cfg.exps.data.loader.img_size),
             inner_iters=soc_config.inner_iters,
-            lambda_reg=soc_config.get("lambda_reg", 0.0),
             learning_rate=soc_config.learning_rate,
             num_steps=soc_config.train_num_steps,
             optimality_criterion=optimality_criterion,
             optimality_target=soc_config.optimality_target,
-            running_state_cost_scaling=soc_config.running_state_cost_scaling,
             score_model=score_model,
             sde=sde,
         )
