@@ -33,13 +33,13 @@ Run from the repository root. Set `CUDA_VISIBLE_DEVICES` to choose the GPU.
 Joint BPTT training:
 
 ```bash
-CUDA_VISIBLE_DEVICES=0 /home/rbarbano/home/git/multiagent-diffusion-soc/.venv/bin/python -m workflows.learning_agent_joint --config-path ../configs --config-name exps/bptt_learning_agents_fine_tuning
+CUDA_VISIBLE_DEVICES=0 python -m workflows.learning_agent_joint --config-path ../configs --config-name exps/bptt_learning_agents_fine_tuning
 ```
 
 Control-wise BPTT training:
 
 ```bash
-CUDA_VISIBLE_DEVICES=0 /home/rbarbano/home/git/multiagent-diffusion-soc/.venv/bin/python -m workflows.learning_agent_control_wise --config-path ../configs --config-name exps/control_wise_bptt_learning_agents_fine_tuning
+CUDA_VISIBLE_DEVICES=0 python -m workflows.learning_agent_control_wise --config-path ../configs --config-name exps/control_wise_bptt_learning_agents_fine_tuning
 ```
 
 Equivalent command using the active `python`:
@@ -61,7 +61,7 @@ exps.sde.name=VP
 Example with overrides:
 
 ```bash
-CUDA_VISIBLE_DEVICES=0 .venv/bin/python -m workflows.learning_agent_joint --config-path ../configs --config-name exps/bptt_learning_agents_fine_tuning exps.soc.optimality_target=3 exps.soc.batch_size=8 exps.soc.num_control_agents=3
+CUDA_VISIBLE_DEVICES=0 python -m workflows.learning_agent_joint --config-path ../configs --config-name exps/bptt_learning_agents_fine_tuning exps.soc.optimality_target=3 exps.soc.batch_size=8 exps.soc.num_control_agents=3
 ```
 
 ## Convenience Scripts
