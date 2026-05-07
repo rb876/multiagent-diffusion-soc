@@ -5,8 +5,8 @@ cd "$(dirname "$0")/.."
 
 # Shared configs
 declare -A CONFIGS=(
-  [workflows.learning_agents_bptt]=exps/bptt_learning_agents_fine_tuning
-  [workflows.learning_agents_bptt_fictitious]=exps/fictitious_bptt_learning_agents_fine_tuning
+  [workflows.learning_agent_joint]=exps/bptt_learning_agents_fine_tuning
+  [workflows.learning_agent_control_wise]=exps/control_wise_bptt_learning_agents_fine_tuning
 )
 
 run_suite () {
@@ -57,12 +57,12 @@ BASE_RUNNING_STATE_COST=10
 BASE_LAMBDA_REG=1
 
 WF_ALL=(
-  workflows.learning_agents_bptt
-  workflows.learning_agents_bptt_fictitious
+  workflows.learning_agent_joint
+  workflows.learning_agent_control_wise
 )
 
 WF_BPTT=(
-  workflows.learning_agents_bptt
+  workflows.learning_agent_joint
 )
 
 # EXP 1

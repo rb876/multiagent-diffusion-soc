@@ -33,13 +33,13 @@ fi
 echo "Running with AGENTS=${AGENTS}, optimality_target=${OPT_TARGET}, batch_size=${BATCH_SIZE}"
 
 declare -A CONFIGS=(
-  [workflows.learning_agents_bptt]=exps/bptt_learning_agents_fine_tuning
-  [workflows.learning_agents_bptt_fictitious]=exps/fictitious_bptt_learning_agents_fine_tuning
+  [workflows.learning_agent_joint]=exps/bptt_learning_agents_fine_tuning
+  [workflows.learning_agent_control_wise]=exps/control_wise_bptt_learning_agents_fine_tuning
 )
 
 ORDER=(
-  workflows.learning_agents_bptt
-  workflows.learning_agents_bptt_fictitious
+  workflows.learning_agent_joint
+  workflows.learning_agent_control_wise
 )
 
 for m in "${ORDER[@]}"; do

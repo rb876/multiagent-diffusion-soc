@@ -19,12 +19,12 @@ RUN_STATE_COST_SCALING_LIST="1.0 10.0"
 
 # which workflows/configs to run
 declare -A CONFIGS=(
-  [workflows.learning_agents_bptt_fictitious]=exps/fictitious_bptt_learning_agents_fine_tuning
-  [workflows.learning_agents_bptt]=exps/bptt_learning_agents_fine_tuning
+  [workflows.learning_agent_control_wise]=exps/control_wise_bptt_learning_agents_fine_tuning
+  [workflows.learning_agent_joint]=exps/bptt_learning_agents_fine_tuning
 )
 ORDER=(
-  workflows.learning_agents_bptt_fictitious
-  workflows.learning_agents_bptt
+  workflows.learning_agent_control_wise
+  workflows.learning_agent_joint
 )
 
 # ---- CLI args ----
@@ -36,7 +36,7 @@ while [[ $# -gt 0 ]]; do
     --lr-list)         LR_LIST="$2"; shift 2 ;;
     --run-state-cost-scaling-list) RUN_STATE_COST_SCALING_LIST="$2"; shift 2 ;;
     --only)
-      # run only one workflow key, e.g. --only workflows.learning_agents_bptt
+      # run only one workflow key, e.g. --only workflows.learning_agent_joint
       ORDER=("$2"); shift 2
       ;;
     *)

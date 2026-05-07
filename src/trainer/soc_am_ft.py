@@ -8,6 +8,7 @@ from src.guidance import compute_vectorized_guidance_grads
 
 
 def joint_adjoint_matching():
+    # TBD: implement a joint version of the adjoint matching training that updates all control agents simultaneously based on a shared forward trajectory and shared adjoint recursion. 
     pass
 
 
