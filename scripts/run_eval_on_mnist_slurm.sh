@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# When Slurm launches a batch script it may execute a spooled copy under
+# /var/spool/slurmd, so prefer the original submission directory.
+REPO_ROOT="${SLURM_SUBMIT_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
 cd "$REPO_ROOT"
 
 echo "[$(date -Is)] Starting MNIST eval sweep job"
