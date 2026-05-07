@@ -92,7 +92,7 @@ Submit the MNIST eval sweep as a Slurm job:
 
 ```bash
 ./scripts/submit_eval_on_mnist_slurm.sh \
-  --partition gpu \
+  --partition workq \
   --time 08:00:00 \
   --mem 32G \
   --cpus-per-task 4 \
