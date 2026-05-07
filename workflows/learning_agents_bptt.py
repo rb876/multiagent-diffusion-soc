@@ -119,7 +119,7 @@ def main(cfg: DictConfig) -> None:
             eps=soc_config.eps,
             image_dim=tuple(cfg.exps.data.loader.img_size),
             control_cost_scaling=soc_config.control_cost_scaling,
-            num_time_intervals=soc_config.train_num_steps,
+            num_time_intervals=soc_config.num_time_intervals,
             optimality_criterion=optimality_criterion,
             optimality_target=soc_config.optimality_target,
             optimizer=optimizer,
