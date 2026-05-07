@@ -7,6 +7,10 @@ from src.samplers.diff_dyms import get_tweedy_estimate
 from src.guidance import compute_vectorized_guidance_grads
 
 
+def joint_adjoint_matching():
+    pass
+
+
 def control_wise_adjoint_matching(
     aggregator,
     batch_size,
@@ -16,7 +20,7 @@ def control_wise_adjoint_matching(
     image_dim,
     inner_iters,
     learning_rate,
-    num_steps,
+    num_time_intervals,
     optimality_criterion,
     optimality_target,
     running_state_cost_scaling,
@@ -26,6 +30,7 @@ def control_wise_adjoint_matching(
     reuse_forward_adjoint_steps=1,
     ema_decay=0.0,
     debug=False,
+    use_stratified_sampling=False,
 ):
     """Fictitious-play style training with an adjoint-matching surrogate for VP/VE reverse SDE controls."""
     score_model.eval()
@@ -34,7 +39,7 @@ def control_wise_adjoint_matching(
     if terminal_state_cost_scaling <= 0.0 and running_state_cost_scaling <= 0.0:
         raise ValueError("At least one of terminal_state_cost_scaling or running_state_cost_scaling must be > 0.")
     if terminal_state_cost_scaling != running_state_cost_scaling:
-        raise  Warning("terminal_state_cost_scaling and running_state_cost_scaling are not equal")
+        Warning("terminal_state_cost_scaling and running_state_cost_scaling are not equal")
     
     agent_keys = sorted(control_agents.keys())
     if not agent_keys:
@@ -78,7 +83,7 @@ def control_wise_adjoint_matching(
 
         optimizer = optimizers[player_key]
 
-        time_steps = torch.linspace(1.0, eps, num_steps, device=device)
+        time_steps = torch.linspace(1.0, eps, num_time_intervals, device=device)
         if ema_decay > 0.0:
             base_agent = ema_base_agents[player_key]
         else:
@@ -86,7 +91,7 @@ def control_wise_adjoint_matching(
             base_agent.eval()
             base_agent.requires_grad_(False)
         if len(time_steps) < 2:
-            raise ValueError("num_steps must be at least 2 to compute a diffusion step.")
+            raise ValueError("num_time_intervals must be at least 2 to compute a diffusion step.")
 
         initial_time = torch.full((batch_size,), time_steps[0], device=device)
         initial_std = sde.marginal_prob_std(initial_time)[:, None, None, None]
@@ -270,6 +275,22 @@ def control_wise_adjoint_matching(
             adjoint_matching_loss = torch.tensor(0.0, device=device)
             cumulative_control_loss = torch.tensor(0.0, device=device)
             mean_residual_norm = torch.tensor(0.0, device=device)
+            if use_stratified_sampling:
+                # Randomly sample one transition from the trajectory for each item in the batch to compute a more memory-efficient but higher-variance loss.
+                # As in the adjoint matching loss 
+                split = num_transitions // 2 
+                k_indices_first_half = torch.randint(0, split, (batch_size,), device=device)
+                k_indices_second_half = torch.randint(split, num_transitions, (batch_size,), device=device)
+                k_indices = torch.cat([k_indices_first_half, k_indices_second_half], dim=0)
+                k_indeces_sorted = torch.sort(k_indices).values
+
+                time_traj = torch.stack([time_traj[k] for k in k_indeces_sorted])
+                step_traj = torch.stack([step_traj[k] for k in k_indeces_sorted])
+                g_traj = torch.stack([g_traj[k] for k in k_indeces_sorted])
+                player_guidance_traj = torch.stack([player_guidance_traj[k] for k in k_indeces_sorted])
+                state_traj = {key: torch.stack([state_traj[key][k] for k in k_indeces_sorted]) for key in agent_keys}   
+                num_transitions = time_traj.shape[0]
+
             for k in range(num_transitions):
                 t_k = time_traj[k]
                 step_size = step_traj[k]

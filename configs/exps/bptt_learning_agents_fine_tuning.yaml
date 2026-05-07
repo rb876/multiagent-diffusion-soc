@@ -20,7 +20,7 @@ soc:
   running_state_cost_scaling: 1.0
   sample_batch_size: 64
   optimality_target: 0
-  train_num_steps: 25
+  num_time_intervals: 25
   sample_num_steps: 500
   aggregator:
     mask_name: split 

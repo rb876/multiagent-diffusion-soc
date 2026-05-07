@@ -109,6 +109,7 @@ def main(cfg: DictConfig) -> None:
         specific_kwargs = {
             "terminal_state_cost_scaling": soc_config.get("terminal_state_cost_scaling"),
             "running_state_cost_scaling": soc_config.get("running_state_cost_scaling"),
+            "use_stratified_sampling": soc_config.get("use_stratified_sampling"),
             "reuse_forward_adjoint_steps": soc_config.get("reuse_forward_adjoint_steps", 1),
             "ema_decay": soc_config.get("ema_decay", 0.0), # deactivated by default since we are reinitializing the optimizer every iteration, but can be used if we want to keep the optimizer state across iterations.
         }
@@ -120,7 +121,7 @@ def main(cfg: DictConfig) -> None:
     for step in pbar:
         # NOTE: we intialise the optmizer inside the training function to reset it every iteration.
         # We could also pass in the optimizer state if we wanted to keep it across iterations.
-        train_kwargs = dict(
+        general_train_kwargs = dict(
             aggregator=aggregator,
             batch_size=soc_config.batch_size,
             control_agents=control_agents,
@@ -130,38 +131,14 @@ def main(cfg: DictConfig) -> None:
             image_dim=tuple(cfg.exps.data.loader.img_size),
             inner_iters=soc_config.inner_iters,
             learning_rate=soc_config.learning_rate,
-            num_steps=soc_config.train_num_steps,
+            num_time_intervals=soc_config.num_time_intervals,
             optimality_criterion=optimality_criterion,
             optimality_target=soc_config.optimality_target,
             score_model=score_model,
             sde=sde,
         )
-        if soc_config.method == "adjoint_matching":
-            train_kwargs["reuse_forward_adjoint_steps"] = soc_config.get("reuse_forward_adjoint_steps", 1)
-            train_kwargs["ema_decay"] = soc_config.get("ema_decay", 0.0)
-
-        loss_dict, info = train_soc_fn(**train_kwargs)
-
-        if isinstance(loss_dict, dict):
-            losses = list(loss_dict.values())
-        else:
-            losses = list(loss_dict)
-
-        control_losses = {
-            f"control_{idx}": float(loss)
-            for idx, loss in enumerate(losses, start=1)
-        }
-        total_val = sum(control_losses.values())
-        postfix_payload = {"total": f"{total_val:.4e}"}
-        postfix_payload.update({name: f"{value:.4e}" for name, value in control_losses.items()})
-        pbar.set_postfix(**postfix_payload)
-
+        _, info = train_soc_fn(**general_train_kwargs)
         if wandb_run is not None:
-            log_payload = {
-                "train/total_loss": total_val,
-                "train/optimality_target": soc_config.optimality_target,
-                "iteration": step + 1,
-            }
             if soc_config.get("debug", False) and info:
                 log_payload: Dict[str, Any] = {"train/iteration": step + 1}
                 for k, v in info.items():
@@ -175,6 +152,7 @@ def main(cfg: DictConfig) -> None:
         should_eval = soc_config.eval_every and (
             step % soc_config.eval_every == 0 or step == soc_config.outer_iters - 1
         )
+
         if should_eval and generate_and_plot_samples is not None:
             samples = generate_and_plot_samples(
                 score_model=score_model,

@@ -14,7 +14,7 @@ def train_joint_control_bptt(
     eps,
     image_dim,
     control_cost_scaling,
-    num_steps,
+    num_time_intervals,
     optimality_criterion,
     optimality_target,
     optimizer,
@@ -43,9 +43,9 @@ def train_joint_control_bptt(
 
     # --- Time discretisation ---
     # Reverse-time grid: t_0 = 1, t_{K-1} ≈ eps, uniform step size.
-    time_steps = torch.linspace(1.0, eps, num_steps, device=device)
+    time_steps = torch.linspace(1.0, eps, num_time_intervals, device=device)
     if len(time_steps) < 2:
-        raise ValueError("num_steps must be at least 2 to compute a diffusion step.")
+        raise ValueError("num_time_intervals must be at least 2 to compute a diffusion step.")
     # --- Initialisation ---
     # Initialize dynamics parameters.
     initial_time = torch.full((batch_size,), time_steps[0], device=device)
@@ -177,7 +177,7 @@ def control_wise_bptt(
     inner_iters,
     control_cost_scaling,
     learning_rate,
-    num_steps,
+    num_time_intervals,
     optimality_criterion,
     optimality_target,
     running_state_cost_scaling,
@@ -215,9 +215,9 @@ def control_wise_bptt(
         optimizer.zero_grad()
         # --- Initialization ---
         # Initialize dynamics parameters.
-        time_steps = torch.linspace(1.0, eps, num_steps, device=device)
+        time_steps = torch.linspace(1.0, eps, num_time_intervals, device=device)
         if len(time_steps) < 2:
-            raise ValueError("num_steps must be at least 2 to compute a diffusion step.")
+            raise ValueError("num_time_intervals must be at least 2 to compute a diffusion step.")
         initial_time = torch.full((batch_size,), time_steps[0], device=device)
         initial_std = sde.marginal_prob_std(initial_time)[:, None, None, None]
         # Initialize all agents.

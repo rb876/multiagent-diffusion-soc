@@ -13,6 +13,7 @@ from src.envs.aggregator import ImageMaskAggregator
 from src.envs.registry import get_optimality_criterion
 from src.models.registry import get_model_by_name
 from src.samplers.diff_dyms import SDE
+from src.trainer.soc_am_ft import joint_adjoint_matching
 from src.trainer.soc_bptt_ft import train_joint_control_bptt
 from src.utils import generate_and_plot_samples, save_control_agents
 
@@ -101,6 +102,8 @@ def main(cfg: DictConfig) -> None:
     # Select training method.
     if soc_config.method == "bptt":
         train_soc_fn = train_joint_control_bptt
+    elif soc_config.method == "adjoint_matching":
+        train_soc_fn = joint_adjoint_matching
     else:
         raise ValueError(f"Unknown training method: {soc_config.method}")
 
@@ -116,7 +119,7 @@ def main(cfg: DictConfig) -> None:
             eps=soc_config.eps,
             image_dim=tuple(cfg.exps.data.loader.img_size),
             control_cost_scaling=soc_config.control_cost_scaling,
-            num_steps=soc_config.train_num_steps,
+            num_time_intervals=soc_config.train_num_steps,
             optimality_criterion=optimality_criterion,
             optimality_target=soc_config.optimality_target,
             optimizer=optimizer,
@@ -124,13 +127,10 @@ def main(cfg: DictConfig) -> None:
             score_model=score_model,
             sde=sde,
         )
-        loss_value = float(loss)
-        pbar.set_postfix(loss=f"{loss_value:.4e}")
-
         if wandb_run is not None:
             wandb_module.log(
                 {
-                    "train/loss": loss_value,
+                    "train/loss": float(loss),
                     "train/lr": optimizer.param_groups[0]["lr"],
                     "train/optimality_target": soc_config.optimality_target,
                     "iteration": step + 1,
