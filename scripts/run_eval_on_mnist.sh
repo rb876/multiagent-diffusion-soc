@@ -3,7 +3,10 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 # ---- GPU setup ----
-export CUDA_VISIBLE_DEVICES=0
+# Respect a scheduler-provided CUDA_VISIBLE_DEVICES if one already exists.
+if [[ -z "${CUDA_VISIBLE_DEVICES:-}" ]]; then
+  export CUDA_VISIBLE_DEVICES=0
+fi
 
 # ---- defaults ----
 AGENTS=2

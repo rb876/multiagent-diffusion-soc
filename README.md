@@ -16,8 +16,10 @@ This repository trains and evaluates multi-agent stochastic optimal control poli
 Use the project virtual environment if available:
 
 ```bash
-source .venv/bin/activate
+source venv/bin/activate
 ```
+
+This repository uses `venv/` as its default virtual environment directory, not `.venv/`.
 
 The default configs expect these checkpoint files to exist:
 
@@ -83,6 +85,26 @@ Run the experiment and ablation suite:
 ```bash
 ./scripts/run_mnist_exps_and_ablations.sh
 ```
+
+## Run on a Slurm Cluster
+
+Submit the MNIST eval sweep as a Slurm job:
+
+```bash
+./scripts/submit_eval_on_mnist_slurm.sh \
+  --partition gpu \
+  --time 08:00:00 \
+  --mem 32G \
+  --cpus-per-task 4 \
+  -- --agents 3 --digits-list "9 3 0"
+```
+
+Notes:
+
+- Logs are written to `logs/slurm/`.
+- Add `--account ...` or `--qos ...` if your cluster requires them.
+- The job wrapper activates `venv/` automatically when present.
+- If your environment lives somewhere else, pass `--venv /path/to/venv` when submitting.
 
 ## Notes
 
