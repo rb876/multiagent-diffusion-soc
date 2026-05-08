@@ -10,6 +10,7 @@ echo "[$(date -Is)] Starting MNIST eval sweep job"
 echo "Host: $(hostname)"
 echo "Repo: $REPO_ROOT"
 echo "Slurm job id: ${SLURM_JOB_ID:-local}"
+echo "Slurm array task id: ${SLURM_ARRAY_TASK_ID:-none}"
 echo "CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-unset}"
 
 # Load the project virtualenv when it exists.
@@ -25,5 +26,14 @@ elif [[ -f "$REPO_ROOT/.venv/bin/activate" ]]; then
 fi
 
 echo "Python: $(command -v python)"
+
+if [[ -n "${SLURM_ARRAY_TASK_ID:-}" ]]; then
+  RUN_ID="${EVAL_SWEEP_RUN_ID:-${SLURM_ARRAY_JOB_ID:-${SLURM_JOB_ID:-$(date +%Y%m%d_%H%M%S)}}}"
+  echo "Array mode: combo_index=${SLURM_ARRAY_TASK_ID}, run_id=${RUN_ID}"
+  exec bash "$REPO_ROOT/scripts/run_eval_on_mnist.sh" \
+    --combo-index "${SLURM_ARRAY_TASK_ID}" \
+    --run-id "${RUN_ID}" \
+    "$@"
+fi
 
 exec bash "$REPO_ROOT/scripts/run_eval_on_mnist.sh" "$@"

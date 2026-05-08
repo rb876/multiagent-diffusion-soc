@@ -99,12 +99,27 @@ Submit the MNIST eval sweep as a Slurm job:
   -- --agents 3 --digits-list "9 3 0"
 ```
 
+Submit the same sweep as a Slurm job array, with one combo per task:
+
+```bash
+./scripts/submit_eval_on_mnist_slurm.sh \
+  --array \
+  --max-parallel 8 \
+  --partition workq \
+  --time 01:00:00 \
+  --mem 32G \
+  --cpus-per-task 4 \
+  -- --agents 3 --digits-list "9 3 0"
+```
+
 Notes:
 
 - Logs are written to `logs/slurm/`.
 - Add `--account ...` or `--qos ...` if your cluster requires them.
 - The job wrapper activates `venv/` automatically when present.
 - If your environment lives somewhere else, pass `--venv /path/to/venv` when submitting.
+- `--array` reuses the same sweep definition, but fans the full grid out across Slurm array tasks.
+- `--max-parallel` lets you cap how many array tasks run at once.
 
 ## Notes
 

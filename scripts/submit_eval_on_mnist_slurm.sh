@@ -15,6 +15,9 @@ JOB_NAME="${JOB_NAME:-eval_mnist}"
 LOG_DIR="${LOG_DIR:-$REPO_ROOT/logs/slurm}"
 VENV_PATH="${VENV_PATH:-$REPO_ROOT/venv}"
 DRY_RUN=0
+ARRAY_MODE=0
+MAX_PARALLEL="${MAX_PARALLEL:-}"
+EVAL_SWEEP_RUN_ID="${EVAL_SWEEP_RUN_ID:-}"
 
 usage() {
   cat <<'EOF'
@@ -35,6 +38,12 @@ Examples:
     --job-name eval_mnist_a2 \
     -- --agents 2 --only workflows.learning_agent_joint
 
+  ./scripts/submit_eval_on_mnist_slurm.sh \
+    --array \
+    --max-parallel 8 \
+    --partition workq \
+    -- --agents 3 --digits-list "9 3 0"
+
 Launcher options:
   --partition NAME       Slurm partition to submit to.
   --account NAME         Slurm account to charge.
@@ -46,6 +55,8 @@ Launcher options:
   --job-name NAME        Slurm job name. Default: eval_mnist
   --log-dir PATH         Directory for stdout/stderr logs.
   --venv PATH            Virtualenv to activate inside the job.
+  --array                Submit one Slurm array task per eval combo.
+  --max-parallel N       Limit simultaneous array tasks to N.
   --dry-run              Print the sbatch command without submitting.
   -h, --help             Show this help.
 
@@ -101,6 +112,14 @@ while [[ $# -gt 0 ]]; do
       VENV_PATH="$2"
       shift 2
       ;;
+    --array)
+      ARRAY_MODE=1
+      shift
+      ;;
+    --max-parallel)
+      MAX_PARALLEL="$2"
+      shift 2
+      ;;
     --dry-run)
       DRY_RUN=1
       shift
@@ -125,6 +144,34 @@ done
 mkdir -p "$LOG_DIR"
 export VENV_PATH
 
+ARRAY_SPEC=""
+if [[ "$ARRAY_MODE" -eq 1 ]]; then
+  COUNT_CMD=(bash "$REPO_ROOT/scripts/run_eval_on_mnist.sh" --count-combos)
+  if [[ "${#TARGET_ARGS[@]}" -gt 0 ]]; then
+    COUNT_CMD+=("${TARGET_ARGS[@]}")
+  fi
+
+  COMBO_COUNT="$("${COUNT_CMD[@]}")"
+  if ! [[ "$COMBO_COUNT" =~ ^[0-9]+$ ]] || [[ "$COMBO_COUNT" -le 0 ]]; then
+    echo "Error: failed to resolve a valid combo count for array submission." >&2
+    exit 1
+  fi
+
+  ARRAY_SPEC="0-$((COMBO_COUNT - 1))"
+  if [[ -n "$MAX_PARALLEL" ]]; then
+    if ! [[ "$MAX_PARALLEL" =~ ^[0-9]+$ ]] || [[ "$MAX_PARALLEL" -le 0 ]]; then
+      echo "Error: --max-parallel must be a positive integer." >&2
+      exit 1
+    fi
+    ARRAY_SPEC="${ARRAY_SPEC}%${MAX_PARALLEL}"
+  fi
+
+  if [[ -z "$EVAL_SWEEP_RUN_ID" ]]; then
+    EVAL_SWEEP_RUN_ID="$(date +%Y%m%d_%H%M%S)"
+  fi
+  export EVAL_SWEEP_RUN_ID
+fi
+
 SBATCH_CMD=(
   sbatch
   --job-name "$JOB_NAME"
@@ -136,6 +183,12 @@ SBATCH_CMD=(
   --mem "$MEMORY"
   --export=ALL
 )
+
+if [[ "$ARRAY_MODE" -eq 1 ]]; then
+  SBATCH_CMD[4]="$LOG_DIR/%x-%A_%a.out"
+  SBATCH_CMD[6]="$LOG_DIR/%x-%A_%a.err"
+  SBATCH_CMD+=(--array "$ARRAY_SPEC")
+fi
 
 if [[ -n "$PARTITION" ]]; then
   SBATCH_CMD+=(--partition "$PARTITION")
@@ -153,6 +206,12 @@ SBATCH_CMD+=("$JOB_SCRIPT")
 
 if [[ "${#TARGET_ARGS[@]}" -gt 0 ]]; then
   SBATCH_CMD+=("${TARGET_ARGS[@]}")
+fi
+
+if [[ "$ARRAY_MODE" -eq 1 ]]; then
+  echo "Array submission: ${COMBO_COUNT} combos"
+  echo "Array spec: ${ARRAY_SPEC}"
+  echo "Sweep run id: ${EVAL_SWEEP_RUN_ID}"
 fi
 
 printf 'Submitting command:\n  '
